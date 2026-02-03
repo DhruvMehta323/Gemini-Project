@@ -16,6 +16,9 @@ This is your main integration point. Structure:
   "cells": {
     "892a100d2c3ffff": {
       "base_risk": 45.2,
+      "smoothed_risk": 42.8,
+      "pedestrian_risk": 67.3,
+      "cyclist_risk": 23.1,
       "crash_count": 12,
       "total_severity": 156,
       "time_modifiers": {
@@ -30,6 +33,15 @@ This is your main integration point. Structure:
   }
 }
 ```
+
+### Risk Score Types
+
+| Field | Use Case | Description |
+|-------|----------|-------------|
+| `base_risk` | Default driving | Raw risk from crash data |
+| `smoothed_risk` | Recommended | Neighbor-aware (no data ≠ safe) |
+| `pedestrian_risk` | Walking routes | Weighted by pedestrian injuries |
+| `cyclist_risk` | Bike routes | Weighted by cyclist injuries |
 
 ### How to Use for Routing Cost Function
 

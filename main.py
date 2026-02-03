@@ -87,9 +87,11 @@ def run_pipeline(
 
     crash_gdf = grid_calc.assign_h3_cells(crash_gdf)
     grid_calc.calculate_cell_risk(crash_gdf, time_weighted=True)
+    grid_calc.apply_spatial_smoothing()  # Neighbor-aware risk
     grid_gdf = grid_calc.create_grid_geodataframe()
 
     print(f"Created {len(grid_gdf)} H3 cells at resolution {h3_resolution}")
+    print(f"Added pedestrian_risk, cyclist_risk, and smoothed_risk scores")
     high_risk = grid_calc.get_high_risk_cells(threshold=60)
     print(f"High risk cells (score >= 60): {len(high_risk)}")
 

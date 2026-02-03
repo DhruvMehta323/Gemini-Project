@@ -203,6 +203,9 @@ class RiskExporter:
             cell_id = row["h3_cell"]
             cells[cell_id] = {
                 "base_risk": float(row["risk_score"]),
+                "smoothed_risk": float(row.get("smoothed_risk", row["risk_score"])),
+                "pedestrian_risk": float(row.get("pedestrian_risk", 0)),
+                "cyclist_risk": float(row.get("cyclist_risk", 0)),
                 "crash_count": int(row["crash_count"]),
                 "total_severity": float(row["total_severity"]),
                 "time_modifiers": {}

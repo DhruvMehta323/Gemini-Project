@@ -85,6 +85,10 @@ class GridRiskCalculator:
             avg_severity=("severity", "mean"),
             total_injured=("number_of_persons_injured", "sum"),
             total_killed=("number_of_persons_killed", "sum"),
+            pedestrian_injured=("number_of_pedestrians_injured", "sum"),
+            pedestrian_killed=("number_of_pedestrians_killed", "sum"),
+            cyclist_injured=("number_of_cyclist_injured", "sum"),
+            cyclist_killed=("number_of_cyclist_killed", "sum"),
             pedestrian_crashes=("number_of_pedestrians_injured", lambda x: (x > 0).sum()),
             cyclist_crashes=("number_of_cyclist_injured", lambda x: (x > 0).sum())
         ).reset_index()
@@ -97,6 +101,28 @@ class GridRiskCalculator:
             ).round(2)
         else:
             cell_stats["risk_score"] = 0
+
+        # Pedestrian-specific risk score (for walking routes)
+        cell_stats["pedestrian_severity"] = (
+            cell_stats["pedestrian_injured"] * 2 +
+            cell_stats["pedestrian_killed"] * 10
+        )
+        max_ped = cell_stats["pedestrian_severity"].max()
+        cell_stats["pedestrian_risk"] = (
+            (cell_stats["pedestrian_severity"] / max_ped * 100).round(2)
+            if max_ped > 0 else 0
+        )
+
+        # Cyclist-specific risk score (for bike routes)
+        cell_stats["cyclist_severity"] = (
+            cell_stats["cyclist_injured"] * 2 +
+            cell_stats["cyclist_killed"] * 10
+        )
+        max_cyc = cell_stats["cyclist_severity"].max()
+        cell_stats["cyclist_risk"] = (
+            (cell_stats["cyclist_severity"] / max_cyc * 100).round(2)
+            if max_cyc > 0 else 0
+        )
 
         # Risk category
         cell_stats["risk_category"] = pd.cut(
@@ -173,3 +199,43 @@ class GridRiskCalculator:
         if self.grid_geo is None:
             self.create_grid_geodataframe()
         return self.grid_geo[self.grid_geo["risk_score"] >= threshold]
+
+    def apply_spatial_smoothing(self, fallback_pct: float = 0.3) -> pd.DataFrame:
+        """
+        Apply spatial smoothing: unknown cells inherit risk from neighbors.
+        This prevents "no data = safe" assumption.
+
+        Args:
+            fallback_pct: For cells with no neighbors, use this % of city avg
+
+        Returns:
+            Updated grid_data with smoothed_risk column
+        """
+        if self.grid_data is None:
+            raise ValueError("No grid data. Call calculate_cell_risk() first.")
+
+        city_avg = self.grid_data["risk_score"].mean()
+
+        def get_smoothed_risk(row):
+            cell = row["h3_cell"]
+            own_risk = row["risk_score"]
+
+            # Get neighbor cells
+            neighbors = h3.grid_ring(cell, 1)
+            neighbor_data = self.grid_data[
+                self.grid_data["h3_cell"].isin(neighbors)
+            ]
+
+            if len(neighbor_data) > 0:
+                neighbor_avg = neighbor_data["risk_score"].mean()
+                # Blend: 70% own risk + 30% neighbor influence
+                return round(own_risk * 0.7 + neighbor_avg * 0.3, 2)
+            else:
+                # Isolated cell: blend with city average
+                return round(own_risk * 0.7 + city_avg * fallback_pct, 2)
+
+        self.grid_data["smoothed_risk"] = self.grid_data.apply(
+            get_smoothed_risk, axis=1
+        )
+
+        return self.grid_data
