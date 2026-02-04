@@ -1,0 +1,7 @@
+flask
+flask-cors
+osmnx
+networkx
+pandas
+geopandas
+h3
