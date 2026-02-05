@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-02-02T21:08:25.744662",
+  "generated_at": "2026-02-05T11:35:19.878189",
   "summary": {
     "data_quality_score": 94.11,
     "model_confidence": 75
@@ -30,23 +30,23 @@
       "total_crashes_covered": 48411
     },
     "risk_distribution": {
-      "mean": 8.86,
-      "median": 5.73,
-      "std": 9.49,
+      "mean": 8.88,
+      "median": 5.76,
+      "std": 9.51,
       "min": 0.24,
       "max": 100.0,
       "percentiles": {
         "p10": 0.65,
-        "p25": 2.18,
-        "p50": 5.73,
-        "p75": 12.26,
-        "p90": 21.13,
-        "p99": 43.83
+        "p25": 2.19,
+        "p50": 5.76,
+        "p75": 12.29,
+        "p90": 21.09,
+        "p99": 43.38
       },
       "category_counts": {
-        "very_low": 5067,
-        "low": 566,
-        "medium": 66,
+        "very_low": 5062,
+        "low": 568,
+        "medium": 69,
         "high": 10,
         "critical": 2
       }
@@ -177,63 +177,63 @@
         },
         {
           "h3_cell": "892a100f64bffff",
-          "risk_score": 82.18,
+          "risk_score": 82.64,
           "crash_count": 62,
           "center_lat": 40.80166621211984,
           "center_lng": -73.9299092281534
         },
         {
           "h3_cell": "892a1005c4fffff",
-          "risk_score": 78.79,
+          "risk_score": 79.24,
           "crash_count": 60,
           "center_lat": 40.71163383284694,
           "center_lng": -73.72978528655779
         },
         {
           "h3_cell": "892a100cac3ffff",
-          "risk_score": 71.37,
+          "risk_score": 71.78,
           "crash_count": 50,
           "center_lat": 40.678287481186985,
           "center_lng": -73.89744897038248
         },
         {
           "h3_cell": "892a100cbb3ffff",
-          "risk_score": 69.68,
+          "risk_score": 70.07,
           "crash_count": 45,
           "center_lat": 40.6526877356249,
           "center_lng": -73.86659706066072
         },
         {
           "h3_cell": "892a100a93bffff",
-          "risk_score": 68.95,
+          "risk_score": 69.34,
           "crash_count": 44,
           "center_lat": 40.81302864641984,
           "center_lng": -73.90034020516592
         },
         {
           "h3_cell": "892a100e363ffff",
-          "risk_score": 68.39,
+          "risk_score": 68.78,
           "crash_count": 37,
           "center_lat": 40.740392407909304,
           "center_lng": -73.84627871929085
         },
         {
           "h3_cell": "892a100a127ffff",
-          "risk_score": 68.06,
+          "risk_score": 68.45,
           "crash_count": 49,
           "center_lat": 40.862981822155405,
           "center_lng": -73.91293542895326
         },
         {
           "h3_cell": "892a100a8d7ffff",
-          "risk_score": 66.21,
+          "risk_score": 66.59,
           "crash_count": 51,
           "center_lat": 40.84441419694358,
           "center_lng": -73.91438041488044
         },
         {
           "h3_cell": "892a100cac7ffff",
-          "risk_score": 62.74,
+          "risk_score": 63.1,
           "crash_count": 49,
           "center_lat": 40.67570502702652,
           "center_lng": -73.89521604926605

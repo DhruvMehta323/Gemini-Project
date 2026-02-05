@@ -1,21 +1,46 @@
-import React, { useState } from 'react';
-import Map, { Source, Layer, Marker } from 'react-map-gl';
-import 'mapbox-gl/dist/mapbox-gl.css';
-import { Shield, Zap, Navigation, Clock } from 'lucide-react';
-import { compareRoutes } from './api/client';
-
-// !!! REPLACE WITH YOUR MAPBOX TOKEN !!!
-const MAPBOX_TOKEN = 'pk.YOUR_TOKEN_HERE'; 
+import React, { useState, useEffect } from 'react';
+import Map, { Source, Layer, Marker, NavigationControl } from 'react-map-gl/maplibre';
+import 'maplibre-gl/dist/maplibre-gl.css';
+import './App.css';
 
 export default function App() {
+  // Manhattan bounds for reference
+  const MANHATTAN_BOUNDS = {
+    minLat: 40.700, maxLat: 40.880,
+    minLng: -74.020, maxLng: -73.900
+  };
+
   const [viewState, setViewState] = useState({
-    longitude: -74.0060, latitude: 40.7128, zoom: 12, pitch: 45
+    longitude: -73.975,
+    latitude: 40.758,
+    zoom: 13,
+    pitch: 40,
+    bearing: 0
   });
 
   const [routeData, setRouteData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [points, setPoints] = useState({ start: null, end: null });
-  const [mode, setMode] = useState('start'); 
+  const [mode, setMode] = useState('start');
+  const [hour, setHour] = useState(17);
+  const [beta, setBeta] = useState(5);
+  const [riskData, setRiskData] = useState(null);
+  const [showHeatmap, setShowHeatmap] = useState(true);
+
+  // Load risk heatmap data based on selected hour
+  useEffect(() => {
+    fetch(`/api/heatmap/${hour}`)
+      .then(res => res.json())
+      .then(data => setRiskData(data))
+      .catch(err => {
+        console.log('Dynamic heatmap failed, trying static:', err);
+        // Fallback to static file
+        fetch('/grid_risk.geojson')
+          .then(res => res.json())
+          .then(data => setRiskData(data))
+          .catch(err2 => console.log('Risk data not loaded:', err2));
+      });
+  }, [hour]);
 
   const handleMapClick = (evt) => {
     const { lat, lng } = evt.lngLat;
@@ -31,97 +56,352 @@ export default function App() {
     if (!points.start || !points.end) return;
     setLoading(true);
     try {
-      const res = await compareRoutes(points.start, points.end, 5.0, 18, false);
-      setRouteData(res.data);
+      const response = await fetch('/api/compare-routes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          start: points.start,
+          end: points.end,
+          beta: beta,
+          hour: hour,
+          is_weekend: false
+        })
+      });
+      const data = await response.json();
+      if (data.status === 'success') {
+        setRouteData(data.data);
+      } else {
+        alert('Route calculation failed: ' + data.message);
+      }
     } catch (e) {
-      alert("Backend error! Make sure Python server is running.");
+      alert("Backend error! Make sure Flask server is running on port 5000.");
     }
     setLoading(false);
   };
 
+  const resetPoints = () => {
+    setPoints({ start: null, end: null });
+    setRouteData(null);
+    setMode('start');
+  };
+
+  const routeToGeoJSON = (coords) => ({
+    type: 'Feature',
+    geometry: {
+      type: 'LineString',
+      coordinates: coords.map(p => [p[1], p[0]])
+    }
+  });
+
+  const getTimeLabel = (h) => {
+    if (h === 0) return '12 AM';
+    if (h === 12) return '12 PM';
+    if (h < 12) return `${h} AM`;
+    return `${h - 12} PM`;
+  };
+
   return (
-    <div className="h-screen w-screen flex flex-col md:flex-row bg-mnc-brand overflow-hidden">
-      {/* SIDEBAR */}
-      <div className="w-full md:w-[400px] z-20 p-6 flex flex-col gap-4 glass-panel m-0 md:m-4">
-        <div className="flex items-center gap-3 border-b border-white/10 pb-4">
-          <Shield className="w-8 h-8 text-mnc-accent" />
+    <div className="app-container">
+      {/* Sidebar */}
+      <div className="sidebar">
+        {/* Header */}
+        <div className="header">
+          <div className="logo">🛡️</div>
           <div>
-            <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-teal-300">
-              SafePath AI
-            </h1>
-            <p className="text-xs text-slate-400">Enterprise Risk Navigation</p>
+            <h1>SafePath NYC</h1>
+            <p>AI-Powered Safe Routing</p>
           </div>
         </div>
 
-        {/* Controls */}
-        <div className="space-y-4 flex-1">
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-slate-300 flex items-center gap-2">
-              <Navigation className="w-4 h-4" /> Trip Points
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              <button 
-                onClick={() => setMode('start')}
-                className={`p-3 rounded-lg text-sm border ${mode === 'start' ? 'bg-mnc-accent' : 'border-slate-600'}`}
-              >
-                {points.start ? "Start Set ✓" : "Set Start"}
-              </button>
-              <button 
-                onClick={() => setMode('end')}
-                className={`p-3 rounded-lg text-sm border ${mode === 'end' ? 'bg-mnc-accent' : 'border-slate-600'}`}
-              >
-                {points.end ? "End Set ✓" : "Set End"}
-              </button>
+        {/* Stats */}
+        <div className="stats-grid">
+          <div className="stat-card">
+            <span className="stat-value">48K+</span>
+            <span className="stat-label">Crashes</span>
+          </div>
+          <div className="stat-card">
+            <span className="stat-value cyan">5.7K</span>
+            <span className="stat-label">Risk Zones</span>
+          </div>
+          <div className="stat-card">
+            <span className="stat-value green">Live</span>
+            <span className="stat-label">Analysis</span>
+          </div>
+        </div>
+
+        {/* Heatmap Toggle */}
+        <div className="toggle-section">
+          <label className="toggle-label">
+            <input
+              type="checkbox"
+              checked={showHeatmap}
+              onChange={(e) => setShowHeatmap(e.target.checked)}
+            />
+            <span className="toggle-text">🔥 Show Risk Heatmap</span>
+          </label>
+        </div>
+
+        {/* Instructions */}
+        <div className="instructions">
+          <div className="instruction-item">
+            <span className="step blue">1</span>
+            <span>Click map to set start</span>
+          </div>
+          <div className="instruction-item">
+            <span className="step red">2</span>
+            <span>Click again for destination</span>
+          </div>
+          <div className="instruction-item">
+            <span className="step green">3</span>
+            <span>Calculate & compare routes</span>
+          </div>
+        </div>
+
+        {/* Point Buttons */}
+        <div className="section">
+          <label className="section-label">TRIP POINTS</label>
+          <div className="button-grid">
+            <button
+              onClick={() => setMode('start')}
+              className={`point-btn ${mode === 'start' ? 'active blue' : ''} ${points.start ? 'set' : ''}`}
+            >
+              {points.start ? '✓ Start Set' : '📍 Set Start'}
+            </button>
+            <button
+              onClick={() => setMode('end')}
+              className={`point-btn ${mode === 'end' ? 'active red' : ''} ${points.end ? 'set' : ''}`}
+            >
+              {points.end ? '✓ End Set' : '🏁 Set End'}
+            </button>
+          </div>
+          {(points.start || points.end) && (
+            <button onClick={resetPoints} className="reset-btn">
+              ↺ Reset Points
+            </button>
+          )}
+        </div>
+
+        {/* Time Slider */}
+        <div className="section">
+          <div className="section-header">
+            <label className="section-label">TIME OF TRAVEL</label>
+            <span className="time-display">{getTimeLabel(hour)}</span>
+          </div>
+          <input
+            type="range"
+            min="0"
+            max="23"
+            value={hour}
+            onChange={(e) => setHour(parseInt(e.target.value))}
+            className="slider"
+          />
+          <div className="slider-labels">
+            <span>12am</span>
+            <span>6am</span>
+            <span>12pm</span>
+            <span>6pm</span>
+            <span>11pm</span>
+          </div>
+        </div>
+
+        {/* Safety Slider */}
+        <div className="section">
+          <div className="section-header">
+            <label className="section-label">SAFETY PRIORITY</label>
+            <span className={`priority-badge ${beta > 6 ? 'green' : beta < 3 ? 'orange' : 'blue'}`}>
+              {beta > 6 ? '🛡️ Safer' : beta < 3 ? '⚡ Faster' : '⚖️ Balanced'}
+            </span>
+          </div>
+          <input
+            type="range"
+            min="0"
+            max="10"
+            step="0.5"
+            value={beta}
+            onChange={(e) => setBeta(parseFloat(e.target.value))}
+            className="slider"
+          />
+          <div className="slider-labels">
+            <span>⚡ Speed</span>
+            <span>🛡️ Safety</span>
+          </div>
+        </div>
+
+        {/* Calculate Button */}
+        <button
+          onClick={runAnalysis}
+          disabled={loading || !points.start || !points.end}
+          className="calculate-btn"
+        >
+          {loading ? '⏳ Analyzing...' : '⚡ Calculate Safe Path'}
+        </button>
+
+        {/* Results */}
+        {routeData && (
+          <div className="results">
+            <div className="results-header">ROUTE COMPARISON</div>
+
+            <div className="result-cards">
+              <div className="result-card green">
+                <span className="result-label">Risk Reduction</span>
+                <span className="result-value">{routeData.metrics.reduction_in_risk_pct}%</span>
+              </div>
+              <div className="result-card orange">
+                <span className="result-label">Extra Time</span>
+                <span className="result-value">+{Math.round(routeData.metrics.extra_time_seconds)}s</span>
+              </div>
+            </div>
+
+            <div className="comparison">
+              <div className="compare-item">
+                <div className="dot amber"></div>
+                <span>Fastest: {routeData.metrics.fastest.total_risk.toFixed(0)} risk</span>
+              </div>
+              <div className="compare-item">
+                <div className="dot green"></div>
+                <span>Safest: {routeData.metrics.safest.total_risk.toFixed(0)} risk</span>
+              </div>
             </div>
           </div>
+        )}
 
-          <button 
-            onClick={runAnalysis}
-            disabled={loading || !points.start || !points.end}
-            className="w-full py-4 mt-4 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl font-bold text-white flex justify-center gap-2"
-          >
-            {loading ? <Clock className="animate-spin" /> : <Zap />}
-            {loading ? "Analyzing..." : "Calculate Safe Path"}
-          </button>
-
-          {/* Results */}
-          {routeData && (
-            <div className="mt-4 p-4 rounded-xl bg-white/5 border border-white/10">
-              <div className="flex justify-between items-center p-3 mb-2 rounded-lg bg-safety-green/10 text-safety-green">
-                <span>Risk Reduction</span>
-                <span className="font-bold text-xl">{routeData.metrics.reduction_in_risk_pct}%</span>
-              </div>
-              <div className="flex justify-between items-center p-3 rounded-lg bg-orange-500/10 text-orange-400">
-                <span>Time Added</span>
-                <span className="font-bold text-xl">+{routeData.metrics.extra_time_seconds}s</span>
-              </div>
-            </div>
-          )}
+        {/* Footer */}
+        <div className="footer">
+          <span>Powered by NYC Open Data</span>
+          <span className="status">● Online</span>
         </div>
       </div>
 
-      {/* MAP */}
-      <div className="flex-1 relative h-full">
+      {/* Map */}
+      <div className="map-container">
         <Map
           {...viewState}
           onMove={evt => setViewState(evt.viewState)}
-          mapStyle="mapbox://styles/mapbox/dark-v11"
-          mapboxAccessToken={MAPBOX_TOKEN}
+          mapStyle="https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"
           onClick={handleMapClick}
+          style={{ width: '100%', height: '100%' }}
         >
+          <NavigationControl position="top-right" />
+
+          {/* Risk Heatmap Layer */}
+          {riskData && showHeatmap && (
+            <Source id="risk-data" type="geojson" data={riskData}>
+              <Layer
+                id="risk-heatmap"
+                type="fill"
+                paint={{
+                  'fill-color': [
+                    'interpolate',
+                    ['linear'],
+                    ['get', 'risk_score'],
+                    0, 'rgba(0, 255, 100, 0.1)',
+                    20, 'rgba(50, 205, 50, 0.2)',
+                    40, 'rgba(255, 255, 0, 0.3)',
+                    60, 'rgba(255, 165, 0, 0.4)',
+                    80, 'rgba(255, 69, 0, 0.5)',
+                    100, 'rgba(255, 0, 0, 0.6)'
+                  ],
+                  'fill-outline-color': 'rgba(255,255,255,0.1)'
+                }}
+              />
+            </Source>
+          )}
+
+          {/* Routes */}
           {routeData && (
             <>
-              <Source id="fast" type="geojson" data={{ type: 'Feature', geometry: { type: 'LineString', coordinates: routeData.fastest_route.map(p => [p[1], p[0]]) } }}>
-                <Layer id="fast-line" type="line" paint={{ 'line-color': '#64748b', 'line-width': 4, 'line-opacity': 0.5 }} />
+              <Source id="fastest-route" type="geojson" data={routeToGeoJSON(routeData.fastest_route)}>
+                <Layer
+                  id="fastest-line-shadow"
+                  type="line"
+                  paint={{
+                    'line-color': '#000000',
+                    'line-width': 12,
+                    'line-opacity': 0.4,
+                    'line-blur': 3
+                  }}
+                />
+                <Layer
+                  id="fastest-line"
+                  type="line"
+                  paint={{
+                    'line-color': '#f59e0b',
+                    'line-width': 6,
+                    'line-opacity': 0.9
+                  }}
+                />
               </Source>
-              <Source id="safe" type="geojson" data={{ type: 'Feature', geometry: { type: 'LineString', coordinates: routeData.safest_route.map(p => [p[1], p[0]]) } }}>
-                <Layer id="safe-line" type="line" paint={{ 'line-color': '#10b981', 'line-width': 5 }} />
+              <Source id="safest-route" type="geojson" data={routeToGeoJSON(routeData.safest_route)}>
+                <Layer
+                  id="safest-line-glow"
+                  type="line"
+                  paint={{
+                    'line-color': '#10b981',
+                    'line-width': 14,
+                    'line-opacity': 0.3,
+                    'line-blur': 4
+                  }}
+                />
+                <Layer
+                  id="safest-line"
+                  type="line"
+                  paint={{
+                    'line-color': '#10b981',
+                    'line-width': 6,
+                    'line-opacity': 1
+                  }}
+                />
               </Source>
             </>
           )}
-          {points.start && <Marker longitude={points.start[1]} latitude={points.start[0]} color="#3b82f6" />}
-          {points.end && <Marker longitude={points.end[1]} latitude={points.end[0]} color="#ef4444" />}
+
+          {/* Markers */}
+          {points.start && (
+            <Marker longitude={points.start[1]} latitude={points.start[0]} anchor="center">
+              <div className="marker blue">A</div>
+            </Marker>
+          )}
+          {points.end && (
+            <Marker longitude={points.end[1]} latitude={points.end[0]} anchor="center">
+              <div className="marker red">B</div>
+            </Marker>
+          )}
         </Map>
+
+        {/* Map Overlay */}
+        <div className="map-overlay">
+          {!points.start && <span>👆 Click map to set START</span>}
+          {points.start && !points.end && <span>👆 Click map to set END</span>}
+          {points.start && points.end && !routeData && <span>✓ Ready - Click Calculate</span>}
+          {routeData && <span>🗺️ Routes displayed</span>}
+        </div>
+
+        {/* Legend */}
+        <div className="map-legend">
+          {showHeatmap && (
+            <div className="legend-section">
+              <span className="legend-title">Risk Level @ {getTimeLabel(hour)}</span>
+              <div className="risk-gradient"></div>
+              <div className="risk-labels">
+                <span>Low</span>
+                <span>High</span>
+              </div>
+            </div>
+          )}
+          {routeData && (
+            <div className="legend-section">
+              <span className="legend-title">Routes</span>
+              <div className="legend-item">
+                <div className="legend-line amber"></div>
+                <span>Fastest</span>
+              </div>
+              <div className="legend-item">
+                <div className="legend-line green"></div>
+                <span>Safest</span>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
