@@ -30,10 +30,10 @@ class ValidationStats:
 
         quality = {
             "total_records": total,
-            "geocoded_pct": round((gdf.geometry.notna().sum() / total) * 100, 2),
-            "has_time_pct": round((gdf["crash_datetime"].notna().sum() / total) * 100, 2) if "crash_datetime" in gdf else 0,
-            "has_street_pct": round((gdf["on_street_name"].notna().sum() / total) * 100, 2) if "on_street_name" in gdf else 0,
-            "has_severity_pct": round((gdf["severity"].notna().sum() / total) * 100, 2) if "severity" in gdf else 0,
+            "geocoded_pct": round((gdf.geometry.notna().sum() / total) * 100, 2) if total > 0 else 0,
+            "has_time_pct": round((gdf["crash_datetime"].notna().sum() / total) * 100, 2) if ("crash_datetime" in gdf and total > 0) else 0,
+            "has_street_pct": round((gdf["on_street_name"].notna().sum() / total) * 100, 2) if ("on_street_name" in gdf and total > 0) else 0,
+            "has_severity_pct": round((gdf["severity"].notna().sum() / total) * 100, 2) if ("severity" in gdf and total > 0) else 0,
             "date_range": {
                 "min": str(gdf["crash_datetime"].min()) if "crash_datetime" in gdf else None,
                 "max": str(gdf["crash_datetime"].max()) if "crash_datetime" in gdf else None

@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-02-05T11:35:19.878189",
+  "generated_at": "2026-02-05T17:44:49.936128",
   "summary": {
     "data_quality_score": 94.11,
     "model_confidence": 75
@@ -30,7 +30,7 @@
       "total_crashes_covered": 48411
     },
     "risk_distribution": {
-      "mean": 8.88,
+      "mean": 8.87,
       "median": 5.76,
       "std": 9.51,
       "min": 0.24,
@@ -39,15 +39,15 @@
         "p10": 0.65,
         "p25": 2.19,
         "p50": 5.76,
-        "p75": 12.29,
+        "p75": 12.25,
         "p90": 21.09,
         "p99": 43.38
       },
       "category_counts": {
-        "very_low": 5062,
-        "low": 568,
-        "medium": 69,
-        "high": 10,
+        "very_low": 5063,
+        "low": 567,
+        "medium": 70,
+        "high": 9,
         "critical": 2
       }
     },
@@ -211,18 +211,18 @@
           "center_lng": -73.90034020516592
         },
         {
-          "h3_cell": "892a100e363ffff",
-          "risk_score": 68.78,
-          "crash_count": 37,
-          "center_lat": 40.740392407909304,
-          "center_lng": -73.84627871929085
-        },
-        {
           "h3_cell": "892a100a127ffff",
           "risk_score": 68.45,
           "crash_count": 49,
           "center_lat": 40.862981822155405,
           "center_lng": -73.91293542895326
+        },
+        {
+          "h3_cell": "892a100e363ffff",
+          "risk_score": 68.05,
+          "crash_count": 37,
+          "center_lat": 40.740392407909304,
+          "center_lng": -73.84627871929085
         },
         {
           "h3_cell": "892a100a8d7ffff",

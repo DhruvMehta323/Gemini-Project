@@ -127,26 +127,27 @@ class CrashDataIngestion:
         df["month"] = df["crash_datetime"].dt.month
 
         # Calculate severity score (weighted)
-        injury_cols = [
+        # Note: number_of_persons_injured/killed is already the total of
+        # pedestrians + cyclists + motorists, so use only the total columns
+        # to avoid double-counting.
+        all_numeric_cols = [
             "number_of_persons_injured",
-            "number_of_pedestrians_injured",
-            "number_of_cyclist_injured",
-            "number_of_motorist_injured"
-        ]
-        killed_cols = [
             "number_of_persons_killed",
+            "number_of_pedestrians_injured",
             "number_of_pedestrians_killed",
+            "number_of_cyclist_injured",
             "number_of_cyclist_killed",
+            "number_of_motorist_injured",
             "number_of_motorist_killed"
         ]
 
-        for col in injury_cols + killed_cols:
+        for col in all_numeric_cols:
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
 
         # Severity: killed=10, injured=2, incident=1
         df["severity"] = (
-            df[killed_cols].sum(axis=1) * 10 +
-            df[injury_cols].sum(axis=1) * 2 +
+            df["number_of_persons_killed"] * 10 +
+            df["number_of_persons_injured"] * 2 +
             1  # base incident weight
         )
 

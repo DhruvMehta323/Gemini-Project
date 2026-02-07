@@ -5,11 +5,13 @@ NYC Safe Routing - Geospatial Risk Analysis Pipeline
 
 Main orchestration script that:
 1. Ingests NYC crash data
-2. Calculates H3 grid-based risk scores
-3. Maps risk to road segments
-4. Analyzes time-of-day patterns
-5. Exports data for routing engine (Person 2) and visualization (Person 3)
-6. Generates validation statistics
+2. Ingests NYC crime data (NYPD complaints)
+3. Calculates H3 grid-based risk scores (crash + crime)
+4. Maps risk to road segments
+5. Analyzes time-of-day patterns
+6. Blends crash + crime risk for travel-mode-aware routing
+7. Exports data for routing engine and visualization
+8. Generates validation statistics
 
 Usage:
     python main.py                    # Full pipeline with defaults
@@ -25,7 +27,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from src.data_ingestion import CrashDataIngestion
+from src.crime_ingestion import CrimeDataIngestion
 from src.grid_risk import GridRiskCalculator
+from src.crime_risk import CrimeRiskCalculator
 from src.segment_risk import SegmentRiskMapper
 from src.time_patterns import TimePatternAnalyzer
 from src.export import RiskExporter
@@ -55,16 +59,18 @@ def run_pipeline(
 
     # Initialize components
     ingestion = CrashDataIngestion(cache_dir="cache")
+    crime_ingestion = CrimeDataIngestion(cache_dir="cache")
     grid_calc = GridRiskCalculator(resolution=h3_resolution)
+    crime_calc = CrimeRiskCalculator(resolution=h3_resolution)
     segment_mapper = SegmentRiskMapper()
     time_analyzer = TimePatternAnalyzer()
-    exporter = RiskExporter(output_dir=output_dir)
+    exporter = RiskExporter(output_dir=output_dir, h3_resolution=h3_resolution)
     validator = ValidationStats()
 
     # ===========================================
-    # STEP 1: Data Ingestion
+    # STEP 1: Crash Data Ingestion
     # ===========================================
-    print("\n[1/6] INGESTING CRASH DATA...")
+    print("\n[1/8] INGESTING CRASH DATA...")
     print("-" * 40)
 
     ingestion.fetch_crashes(
@@ -80,25 +86,58 @@ def run_pipeline(
     print(f"Total injured: {stats['total_injured']}, killed: {stats['total_killed']}")
 
     # ===========================================
-    # STEP 2: H3 Grid Risk Calculation
+    # STEP 2: Crime Data Ingestion
     # ===========================================
-    print("\n[2/6] CALCULATING GRID-BASED RISK...")
+    print("\n[2/8] INGESTING CRIME DATA (NYPD Complaints)...")
+    print("-" * 40)
+
+    crime_ingestion.fetch_crimes(
+        limit=limit,
+        year_start=year_start,
+        use_cache=use_cache
+    )
+    crime_gdf = crime_ingestion.clean_and_geocode()
+
+    print(f"Loaded {len(crime_gdf)} geocoded street crimes")
+    crime_stats = crime_ingestion.get_stats()
+    print(f"Date range: {crime_stats['date_range']['start'][:10]} to {crime_stats['date_range']['end'][:10]}")
+    print(f"Crime types: {len(crime_stats['by_crime_type'])} categories")
+    for crime_type, count in list(crime_stats['by_crime_type'].items())[:5]:
+        print(f"  {crime_type}: {count}")
+
+    # ===========================================
+    # STEP 3: H3 Grid Risk Calculation (Crashes)
+    # ===========================================
+    print("\n[3/8] CALCULATING CRASH GRID RISK...")
     print("-" * 40)
 
     crash_gdf = grid_calc.assign_h3_cells(crash_gdf)
     grid_calc.calculate_cell_risk(crash_gdf, time_weighted=True)
-    grid_calc.apply_spatial_smoothing()  # Neighbor-aware risk
+    grid_calc.apply_spatial_smoothing()
     grid_gdf = grid_calc.create_grid_geodataframe()
 
-    print(f"Created {len(grid_gdf)} H3 cells at resolution {h3_resolution}")
-    print(f"Added pedestrian_risk, cyclist_risk, and smoothed_risk scores")
+    print(f"Created {len(grid_gdf)} crash H3 cells at resolution {h3_resolution}")
     high_risk = grid_calc.get_high_risk_cells(threshold=60)
-    print(f"High risk cells (score >= 60): {len(high_risk)}")
+    print(f"High crash risk cells (score >= 60): {len(high_risk)}")
 
     # ===========================================
-    # STEP 3: Road Segment Risk Mapping
+    # STEP 4: H3 Grid Risk Calculation (Crime)
     # ===========================================
-    print("\n[3/6] MAPPING RISK TO ROAD SEGMENTS...")
+    print("\n[4/8] CALCULATING CRIME GRID RISK...")
+    print("-" * 40)
+
+    crime_gdf = crime_calc.assign_h3_cells(crime_gdf)
+    crime_grid_df = crime_calc.calculate_cell_crime_risk(crime_gdf, time_weighted=True)
+    crime_time_df = crime_calc.calculate_crime_time_patterns(crime_gdf, h3_resolution)
+
+    print(f"Created {len(crime_grid_df)} crime H3 cells")
+    high_crime = crime_grid_df[crime_grid_df["crime_risk"] >= 60]
+    print(f"High crime risk cells (score >= 60): {len(high_crime)}")
+
+    # ===========================================
+    # STEP 5: Road Segment Risk Mapping
+    # ===========================================
+    print("\n[5/8] MAPPING RISK TO ROAD SEGMENTS...")
     print("-" * 40)
 
     segment_mapper.aggregate_by_street(crash_gdf)
@@ -112,9 +151,9 @@ def run_pipeline(
     print(f"High risk streets (score >= 60): {len(high_risk_streets)}")
 
     # ===========================================
-    # STEP 4: Time-of-Day Analysis
+    # STEP 6: Time-of-Day Analysis
     # ===========================================
-    print("\n[4/6] ANALYZING TIME PATTERNS...")
+    print("\n[6/8] ANALYZING TIME PATTERNS...")
     print("-" * 40)
 
     hourly_df = time_analyzer.calculate_hourly_risk(crash_gdf)
@@ -129,12 +168,30 @@ def run_pipeline(
     if dangerous:
         print(f"Most dangerous: {dangerous[0]['time_period']} on {dangerous[0]['day_type']}")
 
-    print(f"Generated {len(cell_time_df)} cell-time combinations")
+    print(f"Generated {len(cell_time_df)} crash cell-time combinations")
+    print(f"Generated {len(crime_time_df)} crime cell-time combinations")
 
     # ===========================================
-    # STEP 5: Export All Formats
+    # STEP 7: Blend Crash + Crime Risk
     # ===========================================
-    print("\n[5/6] EXPORTING DATA...")
+    print("\n[7/8] BLENDING CRASH + CRIME RISK...")
+    print("-" * 40)
+
+    crash_grid_df = grid_calc.grid_data
+    combined_grid, combined_time = CrimeRiskCalculator.blend_risks(
+        crash_grid_df, crime_grid_df, cell_time_df, crime_time_df
+    )
+
+    both_data = combined_grid[(combined_grid["risk_score"] > 0) & (combined_grid["crime_risk"] > 0)]
+    print(f"Combined grid: {len(combined_grid)} total cells")
+    print(f"Cells with BOTH crash + crime data: {len(both_data)}")
+    print(f"Cells with crash data only: {len(combined_grid[combined_grid['risk_score'] > 0])}")
+    print(f"Cells with crime data only: {len(combined_grid[combined_grid['crime_risk'] > 0])}")
+
+    # ===========================================
+    # STEP 8: Export All Formats
+    # ===========================================
+    print("\n[8/8] EXPORTING DATA...")
     print("-" * 40)
 
     exports = exporter.export_all(
@@ -143,16 +200,16 @@ def run_pipeline(
         intersections_gdf=intersections_gdf,
         hourly_df=hourly_df,
         period_df=period_df,
-        cell_time_df=cell_time_df
+        cell_time_df=cell_time_df,
+        combined_grid_df=combined_grid,
+        combined_time_df=combined_time
     )
 
     for name, path in exports.items():
         print(f"  {name}: {path}")
 
-    # ===========================================
-    # STEP 6: Validation Statistics
-    # ===========================================
-    print("\n[6/6] GENERATING VALIDATION REPORT...")
+    # Validation
+    print("\nGENERATING VALIDATION REPORT...")
     print("-" * 40)
 
     validator.data_quality_check(crash_gdf)
@@ -177,11 +234,11 @@ def run_pipeline(
     print(f"""
 OUTPUT FILES FOR TEAM:
 ----------------------
-For Person 2 (Routing):
-  - {output_dir}/routing_risk_api.json  <- PRIMARY: H3 cells with time modifiers
+For Routing Engine:
+  - {output_dir}/routing_risk_api.json  <- PRIMARY: crash + crime risk with time modifiers
   - {output_dir}/grid_risk.json         <- Alternative: simple cell lookup
 
-For Person 3 (Frontend):
+For Frontend:
   - {output_dir}/grid_risk.geojson      <- H3 hexagon heatmap
   - {output_dir}/segment_risk.geojson   <- Street segment lines
   - {output_dir}/intersection_risk.geojson <- High-risk intersections
@@ -189,10 +246,15 @@ For Person 3 (Frontend):
 
 Quality Assurance:
   - {output_dir}/validation_report.json <- Data quality & model metrics
+
+RISK MODEL:
+  Walking: risk = crime_risk * 0.7 + crash_risk * 0.3
+  Driving: risk = crash_risk * 0.9 + crime_risk * 0.1
 """)
 
     return {
         "crash_gdf": crash_gdf,
+        "crime_gdf": crime_gdf,
         "grid_gdf": grid_gdf,
         "segments_gdf": segments_gdf,
         "intersections_gdf": intersections_gdf,

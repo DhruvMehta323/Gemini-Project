@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Map, { Source, Layer, Marker, NavigationControl } from 'react-map-gl/maplibre';
 import 'maplibre-gl/dist/maplibre-gl.css';
+import ChatPanel from './ChatPanel';
+import NavigationPanel from './NavigationPanel';
 import './App.css';
 
 export default function App() {
@@ -26,6 +28,59 @@ export default function App() {
   const [beta, setBeta] = useState(5);
   const [riskData, setRiskData] = useState(null);
   const [showHeatmap, setShowHeatmap] = useState(true);
+  const [activeTab, setActiveTab] = useState('manual');
+  const [travelMode, setTravelMode] = useState('walking');
+  const [navRoute, setNavRoute] = useState(null); // which route to navigate (safest_route or fastest_route coords)
+  const [navTime, setNavTime] = useState(0);
+  const [navPosition, setNavPosition] = useState(null); // live position [lat, lng]
+  const [showNav, setShowNav] = useState(false);
+  const [navInstructions, setNavInstructions] = useState([]);
+  const [navCurrentStep, setNavCurrentStep] = useState(0);
+  const [isActivelyNavigating, setIsActivelyNavigating] = useState(false);
+  const [navAutoStart, setNavAutoStart] = useState(null); // 'sim' | 'gps' | null
+
+  const handleChatRoute = (chatRouteData, startCoords, endCoords, chatHour, chatBeta) => {
+    setRouteData(chatRouteData);
+    setPoints({ start: startCoords, end: endCoords });
+    setHour(chatHour);
+    setBeta(chatBeta);
+  };
+
+  const startNavigation = (routeType, autoStart = null) => {
+    if (!routeData) return;
+    const coords = routeType === 'fastest' ? routeData.fastest_route : routeData.safest_route;
+    const time = routeType === 'fastest'
+      ? routeData.metrics.fastest.total_time
+      : routeData.metrics.safest.total_time;
+    setNavRoute(coords);
+    setNavTime(time);
+    setShowNav(true);
+    setNavAutoStart(autoStart);
+  };
+
+  const handleNavStateUpdate = useCallback(({ instructions, currentStep, isNavigating }) => {
+    setNavInstructions(instructions);
+    setNavCurrentStep(currentStep);
+    setIsActivelyNavigating(isNavigating);
+  }, []);
+
+  const navContext = {
+    instructions: navInstructions,
+    currentStep: navCurrentStep,
+    currentPosition: navPosition,
+    isNavigating: isActivelyNavigating,
+    route: navRoute,
+  };
+
+  const closeNavigation = () => {
+    setShowNav(false);
+    setNavRoute(null);
+    setNavPosition(null);
+    setNavInstructions([]);
+    setNavCurrentStep(0);
+    setIsActivelyNavigating(false);
+    setNavAutoStart(null);
+  };
 
   // Load risk heatmap data based on selected hour
   useEffect(() => {
@@ -64,7 +119,8 @@ export default function App() {
           end: points.end,
           beta: beta,
           hour: hour,
-          is_weekend: false
+          is_weekend: false,
+          travel_mode: travelMode
         })
       });
       const data = await response.json();
@@ -73,7 +129,7 @@ export default function App() {
       } else {
         alert('Route calculation failed: ' + data.message);
       }
-    } catch (e) {
+    } catch {
       alert("Backend error! Make sure Flask server is running on port 5000.");
     }
     setLoading(false);
@@ -120,12 +176,12 @@ export default function App() {
             <span className="stat-label">Crashes</span>
           </div>
           <div className="stat-card">
-            <span className="stat-value cyan">5.7K</span>
-            <span className="stat-label">Risk Zones</span>
+            <span className="stat-value cyan">15K+</span>
+            <span className="stat-label">Crimes</span>
           </div>
           <div className="stat-card">
-            <span className="stat-value green">Live</span>
-            <span className="stat-label">Analysis</span>
+            <span className="stat-value green">5.8K</span>
+            <span className="stat-label">Risk Zones</span>
           </div>
         </div>
 
@@ -141,128 +197,216 @@ export default function App() {
           </label>
         </div>
 
-        {/* Instructions */}
-        <div className="instructions">
-          <div className="instruction-item">
-            <span className="step blue">1</span>
-            <span>Click map to set start</span>
-          </div>
-          <div className="instruction-item">
-            <span className="step red">2</span>
-            <span>Click again for destination</span>
-          </div>
-          <div className="instruction-item">
-            <span className="step green">3</span>
-            <span>Calculate & compare routes</span>
-          </div>
+        {/* Tab Switcher */}
+        <div className="tab-switcher">
+          <button
+            className={`tab-btn ${activeTab === 'manual' ? 'active' : ''}`}
+            onClick={() => setActiveTab('manual')}
+          >
+            Manual
+          </button>
+          <button
+            className={`tab-btn ${activeTab === 'chat' ? 'active' : ''}`}
+            onClick={() => setActiveTab('chat')}
+          >
+            AI Chat
+          </button>
         </div>
 
-        {/* Point Buttons */}
-        <div className="section">
-          <label className="section-label">TRIP POINTS</label>
-          <div className="button-grid">
-            <button
-              onClick={() => setMode('start')}
-              className={`point-btn ${mode === 'start' ? 'active blue' : ''} ${points.start ? 'set' : ''}`}
-            >
-              {points.start ? '✓ Start Set' : '📍 Set Start'}
-            </button>
-            <button
-              onClick={() => setMode('end')}
-              className={`point-btn ${mode === 'end' ? 'active red' : ''} ${points.end ? 'set' : ''}`}
-            >
-              {points.end ? '✓ End Set' : '🏁 Set End'}
-            </button>
-          </div>
-          {(points.start || points.end) && (
-            <button onClick={resetPoints} className="reset-btn">
-              ↺ Reset Points
-            </button>
-          )}
-        </div>
-
-        {/* Time Slider */}
-        <div className="section">
-          <div className="section-header">
-            <label className="section-label">TIME OF TRAVEL</label>
-            <span className="time-display">{getTimeLabel(hour)}</span>
-          </div>
-          <input
-            type="range"
-            min="0"
-            max="23"
-            value={hour}
-            onChange={(e) => setHour(parseInt(e.target.value))}
-            className="slider"
-          />
-          <div className="slider-labels">
-            <span>12am</span>
-            <span>6am</span>
-            <span>12pm</span>
-            <span>6pm</span>
-            <span>11pm</span>
-          </div>
-        </div>
-
-        {/* Safety Slider */}
-        <div className="section">
-          <div className="section-header">
-            <label className="section-label">SAFETY PRIORITY</label>
-            <span className={`priority-badge ${beta > 6 ? 'green' : beta < 3 ? 'orange' : 'blue'}`}>
-              {beta > 6 ? '🛡️ Safer' : beta < 3 ? '⚡ Faster' : '⚖️ Balanced'}
-            </span>
-          </div>
-          <input
-            type="range"
-            min="0"
-            max="10"
-            step="0.5"
-            value={beta}
-            onChange={(e) => setBeta(parseFloat(e.target.value))}
-            className="slider"
-          />
-          <div className="slider-labels">
-            <span>⚡ Speed</span>
-            <span>🛡️ Safety</span>
-          </div>
-        </div>
-
-        {/* Calculate Button */}
-        <button
-          onClick={runAnalysis}
-          disabled={loading || !points.start || !points.end}
-          className="calculate-btn"
-        >
-          {loading ? '⏳ Analyzing...' : '⚡ Calculate Safe Path'}
-        </button>
-
-        {/* Results */}
-        {routeData && (
-          <div className="results">
-            <div className="results-header">ROUTE COMPARISON</div>
-
-            <div className="result-cards">
-              <div className="result-card green">
-                <span className="result-label">Risk Reduction</span>
-                <span className="result-value">{routeData.metrics.reduction_in_risk_pct}%</span>
+        {activeTab === 'manual' ? (
+          <>
+            {/* Instructions */}
+            <div className="instructions">
+              <div className="instruction-item">
+                <span className="step blue">1</span>
+                <span>Click map to set start</span>
               </div>
-              <div className="result-card orange">
-                <span className="result-label">Extra Time</span>
-                <span className="result-value">+{Math.round(routeData.metrics.extra_time_seconds)}s</span>
+              <div className="instruction-item">
+                <span className="step red">2</span>
+                <span>Click again for destination</span>
+              </div>
+              <div className="instruction-item">
+                <span className="step green">3</span>
+                <span>Calculate & compare routes</span>
               </div>
             </div>
 
-            <div className="comparison">
-              <div className="compare-item">
-                <div className="dot amber"></div>
-                <span>Fastest: {routeData.metrics.fastest.total_risk.toFixed(0)} risk</span>
+            {/* Point Buttons */}
+            <div className="section">
+              <label className="section-label">TRIP POINTS</label>
+              <div className="button-grid">
+                <button
+                  onClick={() => setMode('start')}
+                  className={`point-btn ${mode === 'start' ? 'active blue' : ''} ${points.start ? 'set' : ''}`}
+                >
+                  {points.start ? '✓ Start Set' : '📍 Set Start'}
+                </button>
+                <button
+                  onClick={() => setMode('end')}
+                  className={`point-btn ${mode === 'end' ? 'active red' : ''} ${points.end ? 'set' : ''}`}
+                >
+                  {points.end ? '✓ End Set' : '🏁 Set End'}
+                </button>
               </div>
-              <div className="compare-item">
-                <div className="dot green"></div>
-                <span>Safest: {routeData.metrics.safest.total_risk.toFixed(0)} risk</span>
+              {(points.start || points.end) && (
+                <button onClick={resetPoints} className="reset-btn">
+                  ↺ Reset Points
+                </button>
+              )}
+            </div>
+
+            {/* Travel Mode */}
+            <div className="section">
+              <label className="section-label">TRAVEL MODE</label>
+              <div className="mode-switcher">
+                <button
+                  className={`mode-btn ${travelMode === 'walking' ? 'active' : ''}`}
+                  onClick={() => setTravelMode('walking')}
+                >
+                  🚶 Walk
+                </button>
+                <button
+                  className={`mode-btn ${travelMode === 'cycling' ? 'active' : ''}`}
+                  onClick={() => setTravelMode('cycling')}
+                >
+                  🚴 Bike
+                </button>
+                <button
+                  className={`mode-btn ${travelMode === 'driving' ? 'active' : ''}`}
+                  onClick={() => setTravelMode('driving')}
+                >
+                  🚗 Drive
+                </button>
+              </div>
+              <div className="mode-hint">
+                {travelMode === 'walking' && 'Crime risk weighted 70% — crashes 30%'}
+                {travelMode === 'cycling' && 'Crime + crash risk weighted equally'}
+                {travelMode === 'driving' && 'Crash risk weighted 90% — crime 10%'}
               </div>
             </div>
-          </div>
+
+            {/* Time Slider */}
+            <div className="section">
+              <div className="section-header">
+                <label className="section-label">TIME OF TRAVEL</label>
+                <span className="time-display">{getTimeLabel(hour)}</span>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="23"
+                value={hour}
+                onChange={(e) => setHour(parseInt(e.target.value))}
+                className="slider"
+              />
+              <div className="slider-labels">
+                <span>12am</span>
+                <span>6am</span>
+                <span>12pm</span>
+                <span>6pm</span>
+                <span>11pm</span>
+              </div>
+            </div>
+
+            {/* Safety Slider */}
+            <div className="section">
+              <div className="section-header">
+                <label className="section-label">SAFETY PRIORITY</label>
+                <span className={`priority-badge ${beta > 6 ? 'green' : beta < 3 ? 'orange' : 'blue'}`}>
+                  {beta > 6 ? '🛡️ Safer' : beta < 3 ? '⚡ Faster' : '⚖️ Balanced'}
+                </span>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="10"
+                step="0.5"
+                value={beta}
+                onChange={(e) => setBeta(parseFloat(e.target.value))}
+                className="slider"
+              />
+              <div className="slider-labels">
+                <span>⚡ Speed</span>
+                <span>🛡️ Safety</span>
+              </div>
+            </div>
+
+            {/* Calculate Button */}
+            <button
+              onClick={runAnalysis}
+              disabled={loading || !points.start || !points.end}
+              className="calculate-btn"
+            >
+              {loading ? '⏳ Analyzing...' : '⚡ Calculate Safe Path'}
+            </button>
+
+            {/* Results */}
+            {routeData && (
+              <div className="results">
+                <div className="results-header">ROUTE COMPARISON</div>
+
+                <div className="result-cards">
+                  <div className="result-card green">
+                    <span className="result-label">Risk Reduction</span>
+                    <span className="result-value">{routeData.metrics.reduction_in_risk_pct}%</span>
+                  </div>
+                  <div className="result-card orange">
+                    <span className="result-label">Extra Time</span>
+                    <span className="result-value">+{Math.round(routeData.metrics.extra_time_seconds)}s</span>
+                  </div>
+                </div>
+
+                <div className="comparison">
+                  <div className="compare-item">
+                    <div className="dot amber"></div>
+                    <span>Fastest: {routeData.metrics.fastest.total_risk.toFixed(0)} risk</span>
+                  </div>
+                  <div className="compare-item">
+                    <div className="dot green"></div>
+                    <span>Safest: {routeData.metrics.safest.total_risk.toFixed(0)} risk</span>
+                  </div>
+                </div>
+
+                {/* Navigate buttons */}
+                {!showNav && (
+                  <div className="nav-buttons">
+                    <button className="nav-btn safest" onClick={() => startNavigation('safest')}>
+                      🛡️ Navigate Safest
+                    </button>
+                    <button className="nav-btn fastest" onClick={() => startNavigation('fastest')}>
+                      ⚡ Navigate Fastest
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Navigation Panel (appears after clicking Navigate) */}
+            {showNav && navRoute && (
+              <NavigationPanel
+                route={navRoute}
+                totalTime={navTime}
+                onPositionUpdate={setNavPosition}
+                onNavStateUpdate={handleNavStateUpdate}
+                onClose={closeNavigation}
+                autoStart={navAutoStart}
+              />
+            )}
+          </>
+        ) : (
+          <>
+            <ChatPanel onRouteReceived={handleChatRoute} onStartNavigation={startNavigation} navContext={navContext} />
+            {showNav && navRoute && (
+              <NavigationPanel
+                route={navRoute}
+                totalTime={navTime}
+                onPositionUpdate={setNavPosition}
+                onNavStateUpdate={handleNavStateUpdate}
+                onClose={closeNavigation}
+                autoStart={navAutoStart}
+              />
+            )}
+          </>
         )}
 
         {/* Footer */}
@@ -364,6 +508,13 @@ export default function App() {
           {points.end && (
             <Marker longitude={points.end[1]} latitude={points.end[0]} anchor="center">
               <div className="marker red">B</div>
+            </Marker>
+          )}
+
+          {/* Live navigation position marker */}
+          {navPosition && (
+            <Marker longitude={navPosition[1]} latitude={navPosition[0]} anchor="center">
+              <div className="nav-marker"></div>
             </Marker>
           )}
         </Map>

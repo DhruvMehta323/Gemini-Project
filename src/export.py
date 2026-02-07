@@ -13,9 +13,10 @@ from datetime import datetime
 class RiskExporter:
     """Export risk data in various formats for downstream consumers"""
 
-    def __init__(self, output_dir: str = "output"):
+    def __init__(self, output_dir: str = "output", h3_resolution: int = 9):
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(exist_ok=True)
+        self.h3_resolution = h3_resolution
 
     def export_grid_geojson(
         self,
@@ -102,7 +103,7 @@ class RiskExporter:
                 "type": "h3_grid_risk",
                 "generated_at": datetime.now().isoformat(),
                 "total_cells": len(records),
-                "resolution": 9
+                "resolution": self.h3_resolution
             },
             "cells": lookup
         }
@@ -172,7 +173,8 @@ class RiskExporter:
         self,
         grid_df: pd.DataFrame,
         time_df: pd.DataFrame,
-        filename: str = "routing_risk_api.json"
+        filename: str = "routing_risk_api.json",
+        combined_time_df: pd.DataFrame = None
     ) -> str:
         """
         Export combined data optimized for routing engine consumption
@@ -184,12 +186,10 @@ class RiskExporter:
             "cells": {
                 "h3_cell_id": {
                     "base_risk": 45.2,
+                    "crime_risk": 30.1,
                     "crash_count": 12,
-                    "time_modifiers": {
-                        "morning_rush_weekday": 1.5,
-                        "evening_rush_weekday": 1.8,
-                        ...
-                    }
+                    "time_modifiers": { ... },
+                    "crime_time_modifiers": { ... }
                 }
             }
         }
@@ -198,7 +198,7 @@ class RiskExporter:
 
         cells = {}
 
-        # Base risk from grid
+        # Base risk from grid (may include crime_risk if blended)
         for _, row in grid_df.iterrows():
             cell_id = row["h3_cell"]
             cells[cell_id] = {
@@ -206,18 +206,21 @@ class RiskExporter:
                 "smoothed_risk": float(row.get("smoothed_risk", row["risk_score"])),
                 "pedestrian_risk": float(row.get("pedestrian_risk", 0)),
                 "cyclist_risk": float(row.get("cyclist_risk", 0)),
-                "crash_count": int(row["crash_count"]),
-                "total_severity": float(row["total_severity"]),
-                "time_modifiers": {}
+                "crime_risk": float(row.get("crime_risk", 0)),
+                "smoothed_crime_risk": float(row.get("smoothed_crime_risk", 0)),
+                "crash_count": int(row.get("crash_count", 0)),
+                "crime_count": int(row.get("crime_count", 0)),
+                "total_severity": float(row.get("crash_severity", row.get("total_severity", 0))),
+                "time_modifiers": {},
+                "crime_time_modifiers": {}
             }
 
-        # Add time modifiers
+        # Add crash time modifiers
         if time_df is not None:
             for _, row in time_df.iterrows():
                 cell_id = row["h3_cell"]
                 if cell_id in cells:
                     key = f"{row['time_period']}_{row['day_type']}"
-                    # Calculate modifier relative to cell's base risk
                     base = cells[cell_id]["base_risk"]
                     if base > 0:
                         modifier = row["global_risk_score"] / base
@@ -225,13 +228,27 @@ class RiskExporter:
                         modifier = 1.0
                     cells[cell_id]["time_modifiers"][key] = round(modifier, 3)
 
+        # Add crime time modifiers
+        if combined_time_df is not None:
+            for _, row in combined_time_df.iterrows():
+                cell_id = row["h3_cell"]
+                if cell_id in cells:
+                    key = f"{row['time_period']}_{row['day_type']}"
+                    crime_base = cells[cell_id]["crime_risk"]
+                    if crime_base > 0:
+                        modifier = row.get("crime_time_score", 0) / crime_base
+                    else:
+                        modifier = 1.0
+                    cells[cell_id]["crime_time_modifiers"][key] = round(modifier, 3)
+
         output_data = {
             "metadata": {
                 "type": "routing_risk_api",
                 "generated_at": datetime.now().isoformat(),
                 "total_cells": len(cells),
-                "h3_resolution": 9,
-                "usage": "risk = base_risk * time_modifiers[period_daytype]"
+                "h3_resolution": self.h3_resolution,
+                "usage": "Walking: risk = crime_risk*0.7 + base_risk*0.3. Driving: risk = base_risk*0.9 + crime_risk*0.1",
+                "has_crime_data": True
             },
             "cells": cells
         }
@@ -260,7 +277,9 @@ class RiskExporter:
         intersections_gdf: gpd.GeoDataFrame,
         hourly_df: pd.DataFrame,
         period_df: pd.DataFrame,
-        cell_time_df: pd.DataFrame
+        cell_time_df: pd.DataFrame,
+        combined_grid_df: pd.DataFrame = None,
+        combined_time_df: pd.DataFrame = None
     ) -> Dict[str, str]:
         """
         Export all data formats at once
@@ -280,7 +299,12 @@ class RiskExporter:
         exports["time_patterns"] = self.export_time_patterns_json(
             hourly_df, period_df, cell_time_df
         )
-        exports["routing_api"] = self.export_routing_api_format(grid_df, cell_time_df)
+
+        # Use combined grid (crash+crime) if available, else plain crash grid
+        routing_grid = combined_grid_df if combined_grid_df is not None else grid_df
+        exports["routing_api"] = self.export_routing_api_format(
+            routing_grid, cell_time_df, combined_time_df=combined_time_df
+        )
 
         print(f"\nAll exports complete. Files in: {self.output_dir}")
         return exports

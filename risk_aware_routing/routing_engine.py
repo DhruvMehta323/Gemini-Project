@@ -4,6 +4,15 @@ import json
 import h3
 
 class RoutingEngine:
+    # Travel mode risk blending weights
+    # Walking: crime matters much more than crashes
+    # Driving: crashes matter much more than crime
+    MODE_WEIGHTS = {
+        "walking":  {"crash": 0.3, "crime": 0.7},
+        "driving":  {"crash": 0.9, "crime": 0.1},
+        "cycling":  {"crash": 0.5, "crime": 0.5},
+    }
+
     def __init__(self, place_name="Manhattan, New York, USA"):
         print(f"Initializing Graph for {place_name}...")
         self.G = ox.graph_from_place(place_name, network_type='drive')
@@ -21,22 +30,51 @@ class RoutingEngine:
         print(f"Coverage: lat [{self.bounds['min_lat']:.4f}, {self.bounds['max_lat']:.4f}]")
         print(f"Coverage: lng [{self.bounds['min_lng']:.4f}, {self.bounds['max_lng']:.4f}]")
         self.risk_data = {}
+        self.has_crime_data = False
 
     def load_risk_api(self, json_path):
         """Loads the provided routing_risk_api.json"""
         with open(json_path, 'r') as f:
             data = json.load(f)
             self.risk_data = data.get("cells", {})
+            self.has_crime_data = data.get("metadata", {}).get("has_crime_data", False)
         print(f"Loaded {len(self.risk_data)} risk-mapped hexagons.")
+        if self.has_crime_data:
+            print("Crime risk data detected - travel-mode-aware routing enabled.")
 
     def is_in_bounds(self, lat, lng):
         """Check if coordinates are within road network coverage"""
         return (self.bounds['min_lat'] <= lat <= self.bounds['max_lat'] and
                 self.bounds['min_lng'] <= lng <= self.bounds['max_lng'])
 
-    def get_comparison(self, start_coords, end_coords, beta=5.0, hour=12, is_weekend=False):
+    def _get_blended_risk(self, cell_info, time_key, travel_mode="walking"):
+        """
+        Calculate blended risk based on travel mode.
+        Walking: 70% crime + 30% crash
+        Driving: 90% crash + 10% crime
+        """
+        weights = self.MODE_WEIGHTS.get(travel_mode, self.MODE_WEIGHTS["walking"])
+
+        # Crash risk with time modifier
+        crash_base = cell_info.get("base_risk", 0)
+        crash_mod = cell_info.get("time_modifiers", {}).get(time_key, 1.0)
+        crash_risk = crash_base * crash_mod
+
+        # Crime risk with time modifier (falls back gracefully if no crime data)
+        crime_base = cell_info.get("crime_risk", 0)
+        crime_mod = cell_info.get("crime_time_modifiers", {}).get(time_key, 1.0)
+        crime_risk = crime_base * crime_mod
+
+        # If no crime data exists, fall back to crash-only
+        if crime_base == 0 and not self.has_crime_data:
+            return crash_risk
+
+        return (weights["crash"] * crash_risk) + (weights["crime"] * crime_risk)
+
+    def get_comparison(self, start_coords, end_coords, beta=5.0, hour=12, is_weekend=False, travel_mode="walking"):
         """
         Returns two routes: Fastest (Beta=0) and Risk-Aware (Beta=User Value)
+        travel_mode: 'walking', 'driving', or 'cycling' — affects crash vs crime risk weighting
         """
         # Validate bounds
         if not self.is_in_bounds(start_coords[0], start_coords[1]):
@@ -45,15 +83,15 @@ class RoutingEngine:
             raise ValueError(f"End point outside Manhattan coverage area")
 
         # 1. Get the Fastest Route (Beta = 0)
-        fastest_path_coords = self.get_route(start_coords, end_coords, beta=0, hour=hour, is_weekend=is_weekend)
+        fastest_path_coords = self.get_route(start_coords, end_coords, beta=0, hour=hour, is_weekend=is_weekend, travel_mode=travel_mode)
 
         # 2. Get the Risk-Aware Route
-        safest_path_coords = self.get_route(start_coords, end_coords, beta=beta, hour=hour, is_weekend=is_weekend)
+        safest_path_coords = self.get_route(start_coords, end_coords, beta=beta, hour=hour, is_weekend=is_weekend, travel_mode=travel_mode)
 
         # 3. Calculate Stats for both
         stats = {
-            "fastest": self._calculate_route_stats(fastest_path_coords, hour, is_weekend),
-            "safest": self._calculate_route_stats(safest_path_coords, hour, is_weekend)
+            "fastest": self._calculate_route_stats(fastest_path_coords, hour, is_weekend, travel_mode),
+            "safest": self._calculate_route_stats(safest_path_coords, hour, is_weekend, travel_mode)
         }
 
         # Calculate improvements
@@ -61,6 +99,7 @@ class RoutingEngine:
             (1 - (stats["safest"]["total_risk"] / max(stats["fastest"]["total_risk"], 1))) * 100, 1
         )
         stats["extra_time_seconds"] = round(stats["safest"]["total_time"] - stats["fastest"]["total_time"], 0)
+        stats["travel_mode"] = travel_mode
 
         return {
             "fastest_route": fastest_path_coords,
@@ -68,7 +107,7 @@ class RoutingEngine:
             "metrics": stats
         }
 
-    def _calculate_route_stats(self, coords, hour, is_weekend):
+    def _calculate_route_stats(self, coords, hour, is_weekend, travel_mode="walking"):
         """Helper to sum up time and risk for any list of coordinates"""
         total_time = 0
         total_risk = 0
@@ -85,9 +124,9 @@ class RoutingEngine:
 
                 cell = h3.latlng_to_cell(coords[i][0], coords[i][1], 9)
                 if cell in self.risk_data:
-                    base = self.risk_data[cell].get("base_risk", 0)
-                    mod = self.risk_data[cell].get("time_modifiers", {}).get(time_key, 1.0)
-                    total_risk += base * mod
+                    total_risk += self._get_blended_risk(
+                        self.risk_data[cell], time_key, travel_mode
+                    )
 
         return {"total_time": total_time, "total_risk": total_risk}
 
@@ -104,10 +143,11 @@ class RoutingEngine:
 
         return f"{period}_{day_type}"
 
-    def get_route(self, start_coords, end_coords, beta=0.5, hour=12, is_weekend=False):
+    def get_route(self, start_coords, end_coords, beta=0.5, hour=12, is_weekend=False, travel_mode="walking"):
         """
         start_coords: [lat, lng]
         beta: Risk sensitivity (0 = fastest, 1.0+ = much safer)
+        travel_mode: 'walking', 'driving', or 'cycling'
         """
         orig_node = ox.nearest_nodes(self.G, start_coords[1], start_coords[0])
         dest_node = ox.nearest_nodes(self.G, end_coords[1], end_coords[0])
@@ -123,10 +163,9 @@ class RoutingEngine:
             risk_val = 2.0  # Default unknown risk
 
             if cell in self.risk_data:
-                cell_info = self.risk_data[cell]
-                base = cell_info.get("base_risk", 2.0)
-                modifier = cell_info.get("time_modifiers", {}).get(time_key, 1.0)
-                risk_val = base * modifier
+                risk_val = self._get_blended_risk(
+                    self.risk_data[cell], time_key, travel_mode
+                )
 
             return travel_time + (beta * risk_val)
 

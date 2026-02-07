@@ -5,3 +5,5 @@ networkx
 pandas
 geopandas
 h3
+google-generativeai
+python-dotenv

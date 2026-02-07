@@ -204,7 +204,7 @@ class TimePatternAnalyzer:
 
         # Period multiplier
         if self.period_risk is not None:
-            period = None
+            period = "night"
             for p, (start, end) in self.TIME_PERIODS.items():
                 if start <= hour < end:
                     period = p

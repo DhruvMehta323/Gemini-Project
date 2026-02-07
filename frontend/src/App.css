@@ -246,6 +246,43 @@
 .priority-badge.orange { background: rgba(249,115,22,0.2); color: #fb923c; }
 .priority-badge.blue { background: rgba(59,130,246,0.2); color: #60a5fa; }
 
+/* Travel Mode Selector */
+.mode-switcher {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 6px;
+}
+
+.mode-btn {
+  padding: 10px 8px;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 8px;
+  background: rgba(255,255,255,0.03);
+  color: #94a3b8;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: inherit;
+}
+
+.mode-btn.active {
+  background: rgba(59,130,246,0.2);
+  border-color: #3b82f6;
+  color: #60a5fa;
+}
+
+.mode-btn:hover:not(.active) {
+  background: rgba(255,255,255,0.06);
+  color: #cbd5e1;
+}
+
+.mode-hint {
+  font-size: 11px;
+  color: #64748b;
+  margin-top: 6px;
+  text-align: center;
+}
+
 /* Calculate Button */
 .calculate-btn {
   width: 100%;
@@ -441,6 +478,59 @@
 
 .marker.blue { background: #3b82f6; }
 .marker.red { background: #ef4444; }
+
+/* Navigate Buttons (in results section) */
+.nav-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255,255,255,0.1);
+}
+
+.nav-btn {
+  padding: 10px 8px;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: inherit;
+}
+
+.nav-btn.safest {
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: white;
+}
+
+.nav-btn.fastest {
+  background: rgba(245, 158, 11, 0.2);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  color: #fbbf24;
+}
+
+.nav-btn:hover {
+  transform: translateY(-1px);
+}
+
+/* Navigation position marker (pulsing blue dot) */
+.nav-marker {
+  width: 20px;
+  height: 20px;
+  background: #3b82f6;
+  border: 3px solid white;
+  border-radius: 50%;
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.3), 0 2px 8px rgba(0,0,0,0.4);
+  animation: nav-pulse 2s infinite;
+}
+
+@keyframes nav-pulse {
+  0% { box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.3), 0 2px 8px rgba(0,0,0,0.4); }
+  50% { box-shadow: 0 0 0 10px rgba(59, 130, 246, 0.1), 0 2px 8px rgba(0,0,0,0.4); }
+  100% { box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.3), 0 2px 8px rgba(0,0,0,0.4); }
+}
 
 /* Scrollbar */
 .sidebar::-webkit-scrollbar {

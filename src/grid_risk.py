@@ -128,7 +128,8 @@ class GridRiskCalculator:
         cell_stats["risk_category"] = pd.cut(
             cell_stats["risk_score"],
             bins=[0, 20, 40, 60, 80, 100],
-            labels=["very_low", "low", "medium", "high", "critical"]
+            labels=["very_low", "low", "medium", "high", "critical"],
+            include_lowest=True
         )
 
         self.grid_data = cell_stats
@@ -151,9 +152,10 @@ class GridRiskCalculator:
             coords = [(lng, lat) for lat, lng in boundary]
             return Polygon(coords)
 
-        self.grid_data["geometry"] = self.grid_data["h3_cell"].apply(h3_to_polygon)
+        grid_with_geo = self.grid_data.copy()
+        grid_with_geo["geometry"] = grid_with_geo["h3_cell"].apply(h3_to_polygon)
         self.grid_geo = gpd.GeoDataFrame(
-            self.grid_data,
+            grid_with_geo,
             geometry="geometry",
             crs="EPSG:4326"
         )
