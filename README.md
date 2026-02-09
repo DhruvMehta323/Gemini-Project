@@ -14,7 +14,7 @@ And it's not just pedestrians. Chicago sees over **49,000 traffic crashes every 
 
 That stuck with us. Why doesn't navigation software care about *safety*? It optimizes for time, distance, tolls — but never once asks "hey, maybe don't take this route alone at midnight?" or "heads up, this intersection has a bad crash history."
 
-So we built StreetWise.
+So we built SafePath.
 
 ---
 
