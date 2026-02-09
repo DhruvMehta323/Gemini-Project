@@ -1143,7 +1143,7 @@ export default function ChatPanel({ onRouteReceived, onStartNavigation, navConte
         <div className="call-overlay">
           {/* Call header */}
           <div className="call-header">
-            <span className="call-label">SafePath Buddy</span>
+            <span className="call-label">StreetWise Buddy</span>
             <span className="call-sublabel">Powered by Gemini 3</span>
             <span className="call-timer">{formatCallTime(callDuration)}</span>
           </div>
