@@ -204,7 +204,7 @@ export default function App() {
       const isMobileNow = window.innerWidth <= 768;
       map.fitBounds(
         [[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]],
-        { padding: isMobileNow ? { top: 80, left: 40, right: 40, bottom: Math.round(window.innerHeight * 0.5) } : 80, duration: 1000 }
+        { padding: isMobileNow ? { top: 80, left: 40, right: 40, bottom: Math.round(window.innerHeight * 0.45) } : 80, duration: 1000 }
       );
     } catch (err) {
       console.error('[Map] fitBounds error:', err);
