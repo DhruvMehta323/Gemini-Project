@@ -101,7 +101,7 @@ const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 // Default speeds (m/s) per travel mode for time-based turn alerts
 const MODE_SPEEDS = { walking: 1.4, cycling: 4.5, driving: 8.0 };
 
-export default function ChatPanel({ onRouteReceived, onStartNavigation, navContext, userCoords, weather }) {
+export default function ChatPanel({ onRouteReceived, onStartNavigation, navContext, userCoords, weather, onReroute }) {
   const [messages, setMessages] = useState([WELCOME_MESSAGE]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -472,11 +472,13 @@ export default function ChatPanel({ onRouteReceived, onStartNavigation, navConte
         if (minRouteDist > 100 && !offRouteAlertedRef.current) {
           offRouteAlertedRef.current = true;
           turnAlertPendingRef.current = { text: pick([
-            "Hey, I think you might be going off route. Try to head back toward the path I showed you.",
-            "Hmm, you're getting kinda far from the route. You might want to turn around.",
-            "Wait, I don't think this is right. You're off the route, let's get you back on track.",
+            "You're off route. Let me recalculate a new path for you.",
+            "Looks like you went off course. Rerouting now, hang tight!",
+            "Off route detected. Finding a new safe path from here.",
           ]), urgent: true };
           stopCurrentAudio();
+          // Trigger automatic reroute
+          if (onReroute) onReroute(ctx.currentPosition);
         } else if (minRouteDist < 40) {
           offRouteAlertedRef.current = false;
         }

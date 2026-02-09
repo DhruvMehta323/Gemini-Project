@@ -68,6 +68,11 @@
   text-overflow: ellipsis;
 }
 
+.mnb-dist {
+  color: #10b981;
+  font-weight: 700;
+}
+
 .mnb-chevron {
   flex-shrink: 0;
   color: #475569;

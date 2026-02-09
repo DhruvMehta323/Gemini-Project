@@ -1,8 +1,23 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { getBearing, getDistance, getTurnDirection, generateInstructions, interpolate } from './navUtils';
+import { getBearing, getDistance, getTurnDirection, generateInstructions, interpolate, NAV_ICONS, enrichWithStreetNames, reverseGeocodeStreet } from './navUtils';
 import './NavigationPanel.css';
 
-export default function NavigationPanel({ route, totalTime, onPositionUpdate, onNavStateUpdate, onClose, autoStart }) {
+/** Render an SVG maneuver icon */
+function NavIcon({ type, size = 24, color = 'currentColor' }) {
+  const icon = NAV_ICONS[type];
+  if (!icon) return null;
+  const isFilled = type === 'start' || type === 'arrive';
+  return (
+    <svg width={size} height={size} viewBox={icon.viewBox}
+      fill={isFilled ? color : 'none'}
+      stroke={isFilled ? 'none' : color}
+      strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d={icon.path} />
+    </svg>
+  );
+}
+
+export default function NavigationPanel({ route, totalTime, onPositionUpdate, onNavStateUpdate, onClose, autoStart, onReroute }) {
   const [isNavigating, setIsNavigating] = useState(false);
   const [navMode, setNavMode] = useState(null); // 'sim' | 'gps'
   const [currentStep, setCurrentStep] = useState(0);
@@ -10,6 +25,8 @@ export default function NavigationPanel({ route, totalTime, onPositionUpdate, on
   const [timeRemaining, setTimeRemaining] = useState(0);
   const [progress, setProgress] = useState(0);
   const [instructions, setInstructions] = useState([]);
+  const [speed, setSpeed] = useState(0); // m/s
+  const [currentRoad, setCurrentRoad] = useState('');
 
   const simRef = useRef(null);
   const gpsRef = useRef(null);
@@ -17,8 +34,12 @@ export default function NavigationPanel({ route, totalTime, onPositionUpdate, on
   const totalDistRef = useRef(0);
   const instructionsRef = useRef([]);
   const currentStepRef = useRef(0);
+  const lastPosRef = useRef(null);
+  const lastTimeRef = useRef(null);
+  const roadGeocodeRef = useRef(0); // throttle timestamp
+  const offRouteRef = useRef(false);
 
-  // Generate instructions when route changes
+  // Generate instructions when route changes + enrich with street names
   useEffect(() => {
     if (route && route.length > 1) {
       const instrs = generateInstructions(route);
@@ -32,7 +53,13 @@ export default function NavigationPanel({ route, totalTime, onPositionUpdate, on
       }
       totalDistRef.current = total;
       setDistanceRemaining(Math.round(total));
-      setTimeRemaining(Math.round(totalTime || total / 1.4)); // 1.4 m/s walking speed
+      setTimeRemaining(Math.round(totalTime || total / 1.4));
+
+      // Async: enrich with street names (non-blocking)
+      enrichWithStreetNames(instrs).then((enriched) => {
+        setInstructions([...enriched]);
+        instructionsRef.current = enriched;
+      });
     }
   }, [route, totalTime]);
 
@@ -155,8 +182,21 @@ export default function NavigationPanel({ route, totalTime, onPositionUpdate, on
       (position) => {
         setGpsError(null);
         const pos = [position.coords.latitude, position.coords.longitude];
+        const now = Date.now();
         onPositionUpdate(pos);
         updateStep(pos);
+
+        // Compute speed from GPS deltas
+        if (lastPosRef.current && lastTimeRef.current) {
+          const dt = (now - lastTimeRef.current) / 1000;
+          if (dt > 0.5) {
+            const dist = getDistance(lastPosRef.current, pos);
+            const spd = dist / dt;
+            setSpeed(spd < 0.3 ? 0 : spd); // filter noise below 0.3 m/s
+          }
+        }
+        lastPosRef.current = pos;
+        lastTimeRef.current = now;
 
         // Calculate remaining distance along route (not straight-line)
         let closestIdx = 0;
@@ -179,6 +219,22 @@ export default function NavigationPanel({ route, totalTime, onPositionUpdate, on
         const total = totalDistRef.current;
         if (total > 0) {
           setProgress(Math.max(0, Math.min(100, ((total - remaining) / total) * 100)));
+        }
+
+        // Off-route detection: > 100m triggers reroute
+        if (closestDist > 100 && !offRouteRef.current) {
+          offRouteRef.current = true;
+          if (onReroute) onReroute(pos);
+        } else if (closestDist < 40) {
+          offRouteRef.current = false;
+        }
+
+        // Reverse geocode current road (throttled: every 10s)
+        if (now - roadGeocodeRef.current > 10000) {
+          roadGeocodeRef.current = now;
+          reverseGeocodeStreet(pos).then((road) => {
+            if (road) setCurrentRoad(road);
+          });
         }
 
         // Check for arrival
@@ -249,6 +305,26 @@ export default function NavigationPanel({ route, totalTime, onPositionUpdate, on
     return `${secs} sec`;
   };
 
+  const formatSpeed = (mps) => {
+    const mph = mps * 2.237;
+    return `${Math.round(mph)} mph`;
+  };
+
+  const getETAClock = (secsRemaining) => {
+    const arrival = new Date(Date.now() + secsRemaining * 1000);
+    return arrival.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  };
+
+  const handleShare = () => {
+    if (navigator.share) {
+      navigator.share({
+        title: 'SafePath Navigation',
+        text: `I'm navigating safely! ETA: ${getETAClock(timeRemaining)}`,
+        url: window.location.href,
+      }).catch(() => {});
+    }
+  };
+
   // Current instruction to display prominently
   const currentInstruction = instructions[currentStep] || null;
   const nextInstruction = instructions[currentStep + 1] || null;
@@ -306,36 +382,50 @@ export default function NavigationPanel({ route, totalTime, onPositionUpdate, on
             <div className="nav-progress-fill" style={{ width: `${progress}%` }} />
           </div>
 
-          {/* Current instruction - big display */}
+          {/* Current road name */}
+          {currentRoad && (
+            <div className="nav-road-name">{currentRoad}</div>
+          )}
+
+          {/* Current instruction - big display with SVG icon */}
           {currentInstruction && (
             <div className="nav-current">
-              <span className="nav-current-icon">{currentInstruction.icon}</span>
+              <span className="nav-current-icon">
+                <NavIcon type={currentInstruction.svgType} size={32} color="#10b981" />
+              </span>
               <div className="nav-current-text">
                 <span className="nav-current-label">{currentInstruction.label}</span>
                 {nextInstruction && (
                   <span className="nav-current-next">
-                    Then: {nextInstruction.icon} {nextInstruction.label} in {formatDist(nextInstruction.distance)}
+                    Then: {nextInstruction.label} in {formatDist(nextInstruction.distance)}
                   </span>
                 )}
               </div>
             </div>
           )}
 
-          {/* Stats row */}
+          {/* Stats row — speed, ETA clock, remaining */}
           <div className="nav-stats">
             <div className="nav-stat">
+              <span className="nav-stat-value">{navMode === 'gps' ? formatSpeed(speed) : formatDist(distanceRemaining)}</span>
+              <span className="nav-stat-label">{navMode === 'gps' ? 'Speed' : 'Remaining'}</span>
+            </div>
+            <div className="nav-stat">
+              <span className="nav-stat-value">{getETAClock(timeRemaining)}</span>
+              <span className="nav-stat-label">Arrival</span>
+            </div>
+            <div className="nav-stat">
               <span className="nav-stat-value">{formatDist(distanceRemaining)}</span>
-              <span className="nav-stat-label">Remaining</span>
-            </div>
-            <div className="nav-stat">
-              <span className="nav-stat-value">{formatTime(timeRemaining)}</span>
-              <span className="nav-stat-label">ETA</span>
-            </div>
-            <div className="nav-stat">
-              <span className="nav-stat-value">{Math.round(progress)}%</span>
-              <span className="nav-stat-label">Done</span>
+              <span className="nav-stat-label">Left</span>
             </div>
           </div>
+
+          {/* Share ETA button */}
+          {navigator.share && (
+            <button className="nav-share-btn" onClick={handleShare}>
+              Share ETA
+            </button>
+          )}
 
           {/* Step list */}
           <div className="nav-steps" ref={stepListRef}>
@@ -344,7 +434,9 @@ export default function NavigationPanel({ route, totalTime, onPositionUpdate, on
                 key={i}
                 className={`nav-step ${i === currentStep ? 'active' : ''} ${i < currentStep ? 'done' : ''}`}
               >
-                <span className="nav-step-icon">{i < currentStep ? '✓' : instr.icon}</span>
+                <span className="nav-step-icon">
+                  {i < currentStep ? '✓' : <NavIcon type={instr.svgType} size={18} color={i === currentStep ? '#60a5fa' : '#64748b'} />}
+                </span>
                 <span className="nav-step-label">{instr.label}</span>
                 {instr.distance > 0 && (
                   <span className="nav-step-dist">{formatDist(instr.distance)}</span>

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import Map, { Source, Layer, Marker, NavigationControl } from 'react-map-gl/mapbox';
 import 'mapbox-gl/dist/mapbox-gl.css';
-import { getBearing } from './navUtils';
+import { getBearing, getDistance } from './navUtils';
 import ChatPanel from './ChatPanel';
 import NavigationPanel from './NavigationPanel';
 import MobileBottomSheet from './MobileBottomSheet';
@@ -49,7 +49,9 @@ export default function App() {
   const [sheetPosition, setSheetPosition] = useState('peek');
   const [mapLoaded, setMapLoaded] = useState(false);
   const [mobileOptionsOpen, setMobileOptionsOpen] = useState(false);
+  const [activeRouteType, setActiveRouteType] = useState(null);
   const mapRef = useRef(null);
+  const rerouteRef = useRef(false);
 
   // Mobile detection
   useEffect(() => {
@@ -90,7 +92,42 @@ export default function App() {
     setNavTime(time);
     setShowNav(true);
     setNavAutoStart(autoStart);
+    setActiveRouteType(routeType);
   }, []);
+
+  // Reroute handler: re-calculate from current GPS position to destination
+  const handleReroute = useCallback(async (currentPos) => {
+    if (rerouteRef.current) return; // debounce
+    const rd = routeDataRef.current;
+    if (!rd) return;
+    const dest = navRoute?.[navRoute.length - 1];
+    if (!dest) return;
+    rerouteRef.current = true;
+    try {
+      const res = await fetch('/api/compare-routes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          start: currentPos,
+          end: dest,
+          beta: beta,
+          hour: hour,
+          is_weekend: false,
+          travel_mode: travelMode
+        })
+      });
+      const data = await res.json();
+      if (data.status === 'success') {
+        setRouteData(data.data);
+        const rType = activeRouteType || 'safest';
+        const coords = rType === 'fastest' ? data.data.fastest_route : data.data.safest_route;
+        const time = rType === 'fastest' ? data.data.metrics.fastest.total_time : data.data.metrics.safest.total_time;
+        setNavRoute(coords);
+        setNavTime(time);
+      }
+    } catch {}
+    setTimeout(() => { rerouteRef.current = false; }, 15000); // 15s cooldown
+  }, [navRoute, beta, hour, travelMode, activeRouteType]);
 
   const handleNavStateUpdate = useCallback(({ instructions, currentStep, isNavigating }) => {
     setNavInstructions(instructions);
@@ -626,12 +663,13 @@ export default function App() {
               onNavStateUpdate={handleNavStateUpdate}
               onClose={closeNavigation}
               autoStart={navAutoStart}
+              onReroute={handleReroute}
             />
           )}
         </>
       ) : (
         <>
-          <ChatPanel onRouteReceived={handleChatRoute} onStartNavigation={startNavigation} navContext={navContext} userCoords={userCoords} weather={weather} />
+          <ChatPanel onRouteReceived={handleChatRoute} onStartNavigation={startNavigation} navContext={navContext} userCoords={userCoords} weather={weather} onReroute={handleReroute} />
           {showNav && navRoute && (
             <NavigationPanel
               route={navRoute}
@@ -640,6 +678,7 @@ export default function App() {
               onNavStateUpdate={handleNavStateUpdate}
               onClose={closeNavigation}
               autoStart={navAutoStart}
+              onReroute={handleReroute}
             />
           )}
         </>
@@ -671,6 +710,24 @@ export default function App() {
           style={{ width: '100%', height: '100%' }}
         >
           <NavigationControl position="top-right" />
+
+          {/* 3D Buildings Layer */}
+          {mapLoaded && (
+            <Layer
+              id="3d-buildings"
+              source="composite"
+              source-layer="building"
+              type="fill-extrusion"
+              minzoom={14}
+              filter={['==', 'extrude', 'true']}
+              paint={{
+                'fill-extrusion-color': '#1a1a2e',
+                'fill-extrusion-height': ['get', 'height'],
+                'fill-extrusion-base': ['get', 'min_height'],
+                'fill-extrusion-opacity': 0.6,
+              }}
+            />
+          )}
 
           {/* Risk Heatmap Layer (declarative — this works fine) */}
           {riskData && showHeatmap && (
@@ -838,6 +895,9 @@ export default function App() {
           instruction={navInstructions[navCurrentStep] || null}
           nextInstruction={navInstructions[navCurrentStep + 1] || null}
           progress={navInstructions.length > 1 ? Math.round((navCurrentStep / (navInstructions.length - 1)) * 100) : 0}
+          distanceToTurn={navPosition && navInstructions[navCurrentStep + 1]
+            ? Math.round(getDistance(navPosition, navInstructions[navCurrentStep + 1].coord))
+            : 0}
           onTap={() => setSheetPosition('expanded')}
         />
       )}
