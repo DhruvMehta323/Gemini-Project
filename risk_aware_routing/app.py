@@ -17,8 +17,9 @@ app = Flask(__name__)
 CORS(app)
 api = Blueprint('api', __name__)
 
-# Init Engine (Chicago)
-engine = RoutingEngine("Chicago, Illinois, USA")
+# Init Engine (Chicago) — uses cached graph for fast startup
+GRAPH_CACHE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'output_chicago', 'chicago_graph.graphml')
+engine = RoutingEngine("Chicago, Illinois, USA", cache_path=GRAPH_CACHE)
 engine.load_risk_api("../output_chicago/routing_risk_api.json")
 
 # Load static data for dynamic heatmap

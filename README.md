@@ -6,11 +6,11 @@
 
 ## The story behind this
 
-My first month in Chicago, I was walking back from a friend's place around 11 PM. I didn't know the neighborhoods. Google Maps gave me the "fastest route" — straight through a stretch that, as I later found out, had multiple assault incidents that same week. Nothing happened to me that night, but it easily could have.
+One of us had just moved to Chicago. First month in the city, walking back from a friend's place around 11 PM. Didn't know the neighborhoods. Google Maps gave the "fastest route" — straight through a stretch that, as we later found out, had multiple assault incidents that same week. Nothing happened that night, but it easily could have.
 
-That stuck with me. Why doesn't navigation software care about *safety*? It optimizes for time, distance, tolls — but never once asks "hey, maybe don't walk down this street alone at midnight?"
+That stuck with us. Why doesn't navigation software care about *safety*? It optimizes for time, distance, tolls — but never once asks "hey, maybe don't walk down this street alone at midnight?"
 
-So I built StreetWise.
+So we built StreetWise.
 
 ---
 
@@ -32,7 +32,7 @@ You can also just **call it**. Hit the phone icon and have a voice conversation.
 
 ### The risk isn't static
 
-This is the part I'm most proud of. Risk in StreetWise isn't a fixed heatmap — it shifts constantly:
+This is the part we're most proud of. Risk in StreetWise isn't a fixed heatmap — it shifts constantly:
 
 - **3 PM on a weekday** has **7x more crash risk** than 4 AM. The time slider lets you see this in real-time on the map.
 - **Thunderstorm with hail?** That's a 1.7x risk multiplier on top of everything else. StreetWise checks live weather from Open-Meteo and adjusts.
@@ -136,7 +136,7 @@ Open `http://localhost:5173` and try: *"Walk from Willis Tower to Wrigley Field 
 
 ---
 
-## What I'd build next
+## What we'd build next
 
 - Expand beyond Chicago (the pipeline is city-agnostic, just needs data)
 - Community reports — let users flag sketchy areas in real-time
@@ -150,7 +150,7 @@ Open `http://localhost:5173` and try: *"Walk from Willis Tower to Wrigley Field 
 
 Every year, thousands of pedestrians and cyclists are injured on Chicago streets. Most of them were just going somewhere — to work, to a friend's place, home from a bar. The data to avoid the worst streets already exists. It's public. It's free. Nobody was using it to help people navigate.
 
-Now someone is.
+Now we are.
 
 ---
 

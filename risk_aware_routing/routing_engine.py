@@ -1,6 +1,7 @@
 import osmnx as ox
 import networkx as nx
 import json
+import os
 import h3
 
 class RoutingEngine:
@@ -13,11 +14,20 @@ class RoutingEngine:
         "cycling":  {"crash": 0.5, "crime": 0.5},
     }
 
-    def __init__(self, place_name="Chicago, Illinois, USA"):
-        print(f"Initializing Graph for {place_name}...")
-        self.G = ox.graph_from_place(place_name, network_type='drive')
-        self.G = ox.add_edge_speeds(self.G)
-        self.G = ox.add_edge_travel_times(self.G)
+    def __init__(self, place_name="Chicago, Illinois, USA", cache_path=None):
+        if cache_path and os.path.exists(cache_path):
+            print(f"Loading cached graph from {cache_path}...")
+            self.G = ox.load_graphml(cache_path)
+            print("Graph loaded from cache.")
+        else:
+            print(f"Downloading graph for {place_name} (this may take a few minutes)...")
+            self.G = ox.graph_from_place(place_name, network_type='drive')
+            self.G = ox.add_edge_speeds(self.G)
+            self.G = ox.add_edge_travel_times(self.G)
+            if cache_path:
+                os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+                ox.save_graphml(self.G, cache_path)
+                print(f"Graph cached to {cache_path}")
 
         # Store bounds for validation
         nodes = self.G.nodes(data=True)
