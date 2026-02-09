@@ -6,6 +6,7 @@ import ChatPanel from './ChatPanel';
 import NavigationPanel from './NavigationPanel';
 import MobileBottomSheet from './MobileBottomSheet';
 import MobileNavBar from './MobileNavBar';
+import LocationSearch from './LocationSearch';
 import './App.css';
 
 export default function App() {
@@ -255,6 +256,8 @@ export default function App() {
       setMode('end');
     } else {
       setPoints(p => ({ ...p, end: [lat, lng] }));
+      // Both points set — re-open sheet so user can see results
+      if (isMobile) setSheetPosition('peek');
     }
   };
 
@@ -383,17 +386,19 @@ export default function App() {
           <div className="section">
             <label className="section-label">Route</label>
             <div className="route-input-group">
-              <div className={`route-input-row ${mode === 'start' ? 'active' : ''} ${points.start ? 'set' : ''}`} onClick={() => setMode('start')}>
+              <div className="route-search-row">
                 <div className="route-dot origin"></div>
-                <span>{points.start ? `${points.start[0].toFixed(4)}, ${points.start[1].toFixed(4)}` : 'Click map to set origin'}</span>
+                <LocationSearch
+                  placeholder="Search origin or tap map"
+                  value={points.start}
+                  onSelect={(coords) => { setPoints(p => ({ ...p, start: coords })); setMode('end'); }}
+                  onClear={() => setPoints(p => ({ ...p, start: null }))}
+                  onFocus={() => { setMode('start'); if (isMobile) setSheetPosition('expanded'); }}
+                />
                 {!points.start && userCoords && (
                   <button
                     className="use-location-btn"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setPoints(p => ({ ...p, start: userCoords }));
-                      setMode('end');
-                    }}
+                    onClick={() => { setPoints(p => ({ ...p, start: userCoords })); setMode('end'); }}
                     title="Use my current location"
                   >
                     📍
@@ -401,16 +406,19 @@ export default function App() {
                 )}
               </div>
               <div className="route-input-divider"></div>
-              <div className={`route-input-row ${mode === 'end' ? 'active' : ''} ${points.end ? 'set' : ''}`} onClick={() => setMode('end')}>
+              <div className="route-search-row">
                 <div className="route-dot destination"></div>
-                <span>{points.end ? `${points.end[0].toFixed(4)}, ${points.end[1].toFixed(4)}` : 'Click map to set destination'}</span>
+                <LocationSearch
+                  placeholder="Search destination or tap map"
+                  value={points.end}
+                  onSelect={(coords) => { setPoints(p => ({ ...p, end: coords })); if (isMobile) setSheetPosition('peek'); }}
+                  onClear={() => setPoints(p => ({ ...p, end: null }))}
+                  onFocus={() => { setMode('end'); if (isMobile) setSheetPosition('expanded'); }}
+                />
                 {!points.end && userCoords && (
                   <button
                     className="use-location-btn"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setPoints(p => ({ ...p, end: userCoords }));
-                    }}
+                    onClick={() => setPoints(p => ({ ...p, end: userCoords }))}
                     title="Use my current location"
                   >
                     📍
@@ -728,10 +736,10 @@ export default function App() {
         </Map>
 
         {/* Map Overlay */}
-        <div className="map-overlay">
-          {!points.start && <span>Click map to set origin</span>}
-          {points.start && !points.end && <span>Click map to set destination</span>}
-          {points.start && points.end && !routeData && <span>Ready — click Calculate</span>}
+        <div className={`map-overlay${isMobile && sheetPosition === 'collapsed' && (!points.start || !points.end) ? ' map-overlay-prominent' : ''}`}>
+          {!points.start && <span>Tap map to set origin</span>}
+          {points.start && !points.end && <span>Tap map to set destination</span>}
+          {points.start && points.end && !routeData && <span>Ready — tap Calculate</span>}
           {routeData && <span>Routes displayed</span>}
         </div>
 

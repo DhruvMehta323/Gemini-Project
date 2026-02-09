@@ -214,7 +214,14 @@
   background: rgba(255,255,255,0.03);
   border: 1px solid rgba(255,255,255,0.08);
   border-radius: 10px;
-  overflow: hidden;
+  overflow: visible;
+}
+
+.route-search-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
 }
 
 .route-input-row {
@@ -856,6 +863,24 @@
     left: 12px;
     font-size: 12px;
     padding: 8px 12px;
+  }
+
+  .map-overlay-prominent {
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 16px;
+    font-weight: 600;
+    padding: 14px 24px;
+    color: white;
+    background: rgba(17, 24, 39, 0.92);
+    border: 1px solid rgba(59, 130, 246, 0.4);
+    animation: pulseHint 2s ease-in-out infinite;
+  }
+
+  @keyframes pulseHint {
+    0%, 100% { opacity: 0.85; }
+    50% { opacity: 1; border-color: rgba(59, 130, 246, 0.7); }
   }
 
   .map-legend {
