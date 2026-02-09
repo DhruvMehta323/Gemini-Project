@@ -745,6 +745,7 @@
 }
 
 /* ===== Navigation Marker ===== */
+/* Fallback dot (when not actively navigating) */
 .nav-marker {
   width: 18px;
   height: 18px;
@@ -752,13 +753,38 @@
   border: 3px solid white;
   border-radius: 50%;
   box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.25), 0 2px 6px rgba(0,0,0,0.3);
-  animation: nav-pulse 2s infinite;
 }
 
-@keyframes nav-pulse {
-  0% { box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.25), 0 2px 6px rgba(0,0,0,0.3); }
-  50% { box-shadow: 0 0 0 10px rgba(59, 130, 246, 0.08), 0 2px 6px rgba(0,0,0,0.3); }
-  100% { box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.25), 0 2px 6px rgba(0,0,0,0.3); }
+/* Navigation arrow (Google Maps style) */
+.nav-arrow-container {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.nav-arrow {
+  position: relative;
+  z-index: 2;
+  transition: transform 0.3s ease;
+}
+
+.nav-arrow-pulse {
+  position: absolute;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(66, 133, 244, 0.15);
+  animation: arrow-pulse 2s infinite;
+  z-index: 1;
+}
+
+@keyframes arrow-pulse {
+  0% { transform: scale(1); opacity: 0.6; }
+  50% { transform: scale(1.6); opacity: 0; }
+  100% { transform: scale(1); opacity: 0.6; }
 }
 
 /* ===== Mobile View Toggle ===== */

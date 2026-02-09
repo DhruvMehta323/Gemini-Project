@@ -34,6 +34,7 @@ export default function App() {
   const [navRoute, setNavRoute] = useState(null);
   const [navTime, setNavTime] = useState(0);
   const [navPosition, setNavPosition] = useState(null);
+  const [navBearing, setNavBearing] = useState(0);
   const [showNav, setShowNav] = useState(false);
   const [navInstructions, setNavInstructions] = useState([]);
   const [navCurrentStep, setNavCurrentStep] = useState(0);
@@ -217,6 +218,7 @@ export default function App() {
       }
     }
 
+    setNavBearing(bearing);
     map.easeTo({
       center: [navPosition[1], navPosition[0]],
       zoom: 17,
@@ -675,10 +677,35 @@ export default function App() {
             </Marker>
           )}
 
-          {/* Live navigation position marker */}
+          {/* Live navigation arrow (Google Maps style) */}
           {navPosition && (
             <Marker longitude={navPosition[1]} latitude={navPosition[0]} anchor="center">
-              <div className="nav-marker"></div>
+              {isActivelyNavigating ? (
+                <div className="nav-arrow-container">
+                  <div className="nav-arrow-pulse"></div>
+                  <svg
+                    className="nav-arrow"
+                    width="40" height="40" viewBox="0 0 40 40"
+                    style={{ transform: `rotate(${navBearing - (viewState.bearing || 0)}deg)` }}
+                  >
+                    <defs>
+                      <filter id="arrow-shadow" x="-30%" y="-30%" width="160%" height="160%">
+                        <feDropShadow dx="0" dy="1" stdDeviation="2" floodOpacity="0.4"/>
+                      </filter>
+                    </defs>
+                    <polygon
+                      points="20,4 32,32 20,26 8,32"
+                      fill="#4285F4"
+                      stroke="white"
+                      strokeWidth="2.5"
+                      strokeLinejoin="round"
+                      filter="url(#arrow-shadow)"
+                    />
+                  </svg>
+                </div>
+              ) : (
+                <div className="nav-marker"></div>
+              )}
             </Marker>
           )}
         </Map>
