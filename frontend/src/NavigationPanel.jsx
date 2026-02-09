@@ -169,7 +169,8 @@ export default function NavigationPanel({ route, totalTime, onPositionUpdate, on
   // GPS: track real position
   const startGPS = () => {
     if (!navigator.geolocation) {
-      alert('Geolocation is not supported by your browser');
+      setGpsError('Geolocation is not supported by your browser. Using demo mode.');
+      startSimulation();
       return;
     }
     setIsNavigating(true);

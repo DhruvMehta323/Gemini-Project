@@ -1,3 +1,14 @@
+/* ===== Global Mobile Smoothness ===== */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+html, body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
 /* ===== Layout ===== */
 .app-container {
   display: flex;
@@ -792,6 +803,24 @@
   0% { transform: scale(1); opacity: 0.6; }
   50% { transform: scale(1.6); opacity: 0; }
   100% { transform: scale(1); opacity: 0.6; }
+}
+
+/* ===== Error Banner ===== */
+.error-banner {
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+  color: #f87171;
+  line-height: 1.4;
+  cursor: pointer;
+  animation: errorSlideIn 0.3s ease;
+}
+
+@keyframes errorSlideIn {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 /* ===== Mobile Responsive ===== */

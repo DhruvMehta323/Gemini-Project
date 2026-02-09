@@ -68,10 +68,10 @@ export default function MobileBottomSheet({ position, onPositionChange, children
         top: snapPoints.expanded,
         bottom: snapPoints.collapsed,
       }}
-      dragElastic={0.1}
+      dragElastic={0.05}
       onDragEnd={handleDragEnd}
       animate={{ y: snapPoints[position] }}
-      transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+      transition={{ type: 'spring', damping: 35, stiffness: 350, mass: 0.8 }}
       style={{
         position: 'fixed',
         top: 0,
@@ -80,6 +80,7 @@ export default function MobileBottomSheet({ position, onPositionChange, children
         height: windowHeight,
         zIndex: 20,
         pointerEvents: 'none',
+        willChange: 'transform',
       }}
     >
       <div className="sheet-surface">

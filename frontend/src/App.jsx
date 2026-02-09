@@ -26,6 +26,7 @@ export default function App() {
 
   const [routeData, setRouteData] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState(null);
   const [points, setPoints] = useState({ start: null, end: null });
   const [mode, setMode] = useState('start');
   const [hour, setHour] = useState(17);
@@ -187,20 +188,32 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // Get user's GPS position
+  // Get user's GPS position — retry on failure, fallback to low-accuracy
   useEffect(() => {
     if (!navigator.geolocation) return;
+    let watchId = null;
+    const onSuccess = (pos) => setUserCoords([pos.coords.latitude, pos.coords.longitude]);
+    const startWatch = () => {
+      watchId = navigator.geolocation.watchPosition(
+        onSuccess,
+        () => {},
+        { enableHighAccuracy: true, maximumAge: 5000 }
+      );
+    };
+    // Try high accuracy first, fallback to low accuracy on error
     navigator.geolocation.getCurrentPosition(
-      (pos) => setUserCoords([pos.coords.latitude, pos.coords.longitude]),
-      () => {},
-      { enableHighAccuracy: true, timeout: 30000 }
+      (pos) => { onSuccess(pos); startWatch(); },
+      () => {
+        // High accuracy failed — try without it (faster fix on mobile)
+        navigator.geolocation.getCurrentPosition(
+          (pos) => { onSuccess(pos); startWatch(); },
+          () => { startWatch(); }, // Still start watching even on failure
+          { enableHighAccuracy: false, timeout: 10000 }
+        );
+      },
+      { enableHighAccuracy: true, timeout: 15000 }
     );
-    const watchId = navigator.geolocation.watchPosition(
-      (pos) => setUserCoords([pos.coords.latitude, pos.coords.longitude]),
-      () => {},
-      { enableHighAccuracy: true, maximumAge: 5000 }
-    );
-    return () => navigator.geolocation.clearWatch(watchId);
+    return () => { if (watchId !== null) navigator.geolocation.clearWatch(watchId); };
   }, []);
 
   // Route GeoJSON for declarative rendering (survives map re-renders/style changes)
@@ -302,6 +315,7 @@ export default function App() {
   const runAnalysis = async () => {
     if (!points.start || !points.end) return;
     setLoading(true);
+    setErrorMsg(null);
     try {
       const response = await fetch('/api/compare-routes', {
         method: 'POST',
@@ -318,11 +332,12 @@ export default function App() {
       const data = await response.json();
       if (data.status === 'success') {
         setRouteData(data.data);
+        setErrorMsg(null);
       } else {
-        alert('Route calculation failed: ' + data.message);
+        setErrorMsg(data.message || 'Route calculation failed');
       }
     } catch {
-      alert("Backend error! Make sure Flask server is running on port 5001.");
+      setErrorMsg('Could not connect to server. Please try again.');
     }
     setLoading(false);
   };
@@ -602,6 +617,13 @@ export default function App() {
                 </div>
               </div>
             </>
+          )}
+
+          {/* Error banner */}
+          {errorMsg && (
+            <div className="error-banner" onClick={() => setErrorMsg(null)}>
+              {errorMsg}
+            </div>
           )}
 
           {/* Calculate Button */}

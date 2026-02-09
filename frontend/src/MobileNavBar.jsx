@@ -32,7 +32,7 @@ export default function MobileNavBar({ show, instruction, nextInstruction, progr
           initial={{ y: -100, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           exit={{ y: -100, opacity: 0 }}
-          transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+          transition={{ type: 'spring', damping: 30, stiffness: 350, mass: 0.8 }}
           onClick={onTap}
         >
           <div className="mnb-progress" style={{ width: `${progress || 0}%` }} />

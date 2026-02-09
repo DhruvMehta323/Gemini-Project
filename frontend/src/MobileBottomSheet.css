@@ -1,4 +1,12 @@
 /* ===== Mobile Bottom Sheet ===== */
+.mobile-bottom-sheet {
+  will-change: transform;
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
 .sheet-surface {
   display: flex;
   flex-direction: column;
@@ -9,6 +17,9 @@
   pointer-events: auto;
   overflow: hidden;
   box-shadow: 0 -4px 30px rgba(0, 0, 0, 0.5);
+  will-change: transform;
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
 }
 
 .sheet-handle {
@@ -39,6 +50,9 @@
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
+  scroll-behavior: smooth;
 }
 
 /* Sidebar content when inside bottom sheet */
@@ -54,6 +68,7 @@
   min-height: auto !important;
   overflow-y: visible !important;
   border-right: none !important;
+  contain: layout style;
 }
 
 .mobile-sheet-sidebar .chat-messages {

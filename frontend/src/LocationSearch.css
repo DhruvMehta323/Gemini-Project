@@ -129,3 +129,10 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+.location-search-empty {
+  padding: 12px;
+  text-align: center;
+  color: #64748b;
+  font-size: 13px;
+}

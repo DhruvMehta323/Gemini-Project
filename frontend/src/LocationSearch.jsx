@@ -4,6 +4,10 @@ import './LocationSearch.css';
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
 // Chicago center for proximity bias
 const PROXIMITY = '-87.6298,41.8781';
+// Chicago metro bounding box
+const BBOX = '-88.1,41.5,-87.3,42.15';
+// Session token for Mapbox Search Box billing (stable per component mount)
+const SESSION_TOKEN = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
 
 export default function LocationSearch({ placeholder, value, onSelect, onClear, onFocus }) {
   const [query, setQuery] = useState('');
@@ -37,6 +41,7 @@ export default function LocationSearch({ placeholder, value, onSelect, onClear, 
       .catch(() => {});
   }, [value]);
 
+  // Search using Mapbox Search Box API v1 (much better POI/business results)
   const searchPlaces = useCallback((text) => {
     if (!text || text.length < 2 || !MAPBOX_TOKEN) {
       setResults([]);
@@ -44,11 +49,12 @@ export default function LocationSearch({ placeholder, value, onSelect, onClear, 
     }
     setLoading(true);
     fetch(
-      `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(text)}.json?access_token=${MAPBOX_TOKEN}&proximity=${PROXIMITY}&limit=5&country=us&types=address,poi,neighborhood,place`
+      `https://api.mapbox.com/search/searchbox/v1/suggest?q=${encodeURIComponent(text)}&access_token=${MAPBOX_TOKEN}&session_token=${SESSION_TOKEN}&proximity=${PROXIMITY}&bbox=${BBOX}&limit=7&types=poi,address,place&language=en&country=US`
     )
       .then(r => r.json())
       .then(data => {
-        setResults(data.features || []);
+        const suggestions = data.suggestions || [];
+        setResults(suggestions);
         setShowDropdown(true);
         setLoading(false);
       })
@@ -64,12 +70,28 @@ export default function LocationSearch({ placeholder, value, onSelect, onClear, 
     debounceRef.current = setTimeout(() => searchPlaces(text), 300);
   };
 
-  const handleSelect = (feature) => {
-    const [lng, lat] = feature.center;
-    setQuery(feature.place_name.replace(/, United States$/, ''));
+  // On select: retrieve full feature (with coordinates) from Search Box API
+  const handleSelect = (suggestion) => {
+    const displayName = suggestion.full_address || suggestion.name || 'Selected location';
+    setQuery(displayName.replace(/, United States$/, ''));
     setResults([]);
     setShowDropdown(false);
-    onSelect([lat, lng]);
+
+    // Retrieve coordinates via mapbox_id
+    if (suggestion.mapbox_id && MAPBOX_TOKEN) {
+      fetch(
+        `https://api.mapbox.com/search/searchbox/v1/retrieve/${suggestion.mapbox_id}?access_token=${MAPBOX_TOKEN}&session_token=${SESSION_TOKEN}`
+      )
+        .then(r => r.json())
+        .then(data => {
+          const feature = data.features?.[0];
+          if (feature?.geometry?.coordinates) {
+            const [lng, lat] = feature.geometry.coordinates;
+            onSelect([lat, lng]);
+          }
+        })
+        .catch(() => {});
+    }
   };
 
   const handleClear = () => {
@@ -119,22 +141,28 @@ export default function LocationSearch({ placeholder, value, onSelect, onClear, 
         </button>
       )}
       {loading && <div className="location-search-spinner" />}
-      {showDropdown && results.length > 0 && (
+      {showDropdown && (
         <div className="location-search-dropdown" ref={dropdownRef}>
-          {results.map((f) => (
+          {results.length > 0 ? results.map((s, i) => (
             <button
-              key={f.id}
+              key={s.mapbox_id || i}
               className="location-search-result"
-              onClick={() => handleSelect(f)}
+              onClick={() => handleSelect(s)}
               type="button"
             >
               <span className="lsr-icon">📍</span>
               <div className="lsr-text">
-                <span className="lsr-name">{f.text}</span>
-                <span className="lsr-address">{f.place_name.replace(/, United States$/, '')}</span>
+                <span className="lsr-name">{s.name}</span>
+                <span className="lsr-address">
+                  {(s.full_address || s.place_formatted || '').replace(/, United States$/, '')}
+                </span>
               </div>
             </button>
-          ))}
+          )) : (
+            !loading && query.length >= 2 && (
+              <div className="location-search-empty">No results — try a different name</div>
+            )
+          )}
         </div>
       )}
     </div>
