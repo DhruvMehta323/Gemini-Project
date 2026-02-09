@@ -49,7 +49,7 @@ You can also just **call it**. Hit the phone icon and have a voice conversation.
 This is the part we're most proud of. Risk in SafePath isn't a fixed heatmap — it shifts constantly:
 
 - **3 PM on a weekday** has **7x more crash risk** than 4 AM. The time slider lets you see this in real-time on the map.
-- **Thunderstorm with hail?** That's a 1.7x risk multiplier on top of everything else. StreetWise checks live weather from Open-Meteo and adjusts.
+- **Thunderstorm with hail?** That's a 1.7x risk multiplier on top of everything else. SafePath checks live weather from Open-Meteo and adjusts.
 - **Walking vs driving vs cycling** — completely different risk profiles. The AI picks the right mode from your words, or you can say it explicitly.
 
 ---
