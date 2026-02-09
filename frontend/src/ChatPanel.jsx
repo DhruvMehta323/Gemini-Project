@@ -135,6 +135,9 @@ export default function ChatPanel({ onRouteReceived, onStartNavigation, navConte
   const farAlertedStepRef = useRef(-1);
   const offRouteAlertedRef = useRef(false);
 
+  // Persistent audio element for mobile autoplay unlock
+  const sharedAudioRef = useRef(null);
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
@@ -185,12 +188,16 @@ export default function ChatPanel({ onRouteReceived, onStartNavigation, navConte
 
   // --- TTS using Gemini's natural voice via backend ---
   const stopCurrentAudio = useCallback(() => {
-    const audio = speakingUtteranceRef.current;
-    if (audio && audio instanceof HTMLAudioElement) {
+    const audio = sharedAudioRef.current;
+    if (audio) {
       audio.pause();
-      audio.currentTime = 0;
-      if (audio._objectUrl) URL.revokeObjectURL(audio._objectUrl);
+      if (audio._objectUrl) { URL.revokeObjectURL(audio._objectUrl); audio._objectUrl = null; }
+      audio.removeAttribute('src');
+      audio.onended = null;
+      audio.onerror = null;
     }
+    // Also stop browser SpeechSynthesis
+    if (window.speechSynthesis) window.speechSynthesis.cancel();
     speakingUtteranceRef.current = null;
     // Resolve any pending speak promise so the call loop continues immediately
     const pending = speakResolveRef.current;
@@ -216,9 +223,12 @@ export default function ChatPanel({ onRouteReceived, onStartNavigation, navConte
 
         const blob = await res.blob();
         const url = URL.createObjectURL(blob);
-        const audio = new Audio(url);
-        audio._objectUrl = url;
+        const audio = sharedAudioRef.current;
 
+        if (!audio) { URL.revokeObjectURL(url); resolve(); return; }
+
+        if (audio._objectUrl) URL.revokeObjectURL(audio._objectUrl);
+        audio._objectUrl = url;
         speakingUtteranceRef.current = audio;
 
         const safetyTimeout = setTimeout(() => {
@@ -228,6 +238,7 @@ export default function ChatPanel({ onRouteReceived, onStartNavigation, navConte
         audio.onended = () => {
           clearTimeout(safetyTimeout);
           URL.revokeObjectURL(url);
+          audio._objectUrl = null;
           speakingUtteranceRef.current = null;
           speakResolveRef.current = null;
           resolve();
@@ -235,14 +246,17 @@ export default function ChatPanel({ onRouteReceived, onStartNavigation, navConte
         audio.onerror = () => {
           clearTimeout(safetyTimeout);
           URL.revokeObjectURL(url);
+          audio._objectUrl = null;
           speakingUtteranceRef.current = null;
           speakResolveRef.current = null;
           resolve();
         };
 
+        audio.src = url;
         audio.play().catch(() => {
           clearTimeout(safetyTimeout);
           URL.revokeObjectURL(url);
+          audio._objectUrl = null;
           speakingUtteranceRef.current = null;
           speakResolveRef.current = null;
           resolve();
@@ -290,9 +304,12 @@ export default function ChatPanel({ onRouteReceived, onStartNavigation, navConte
         for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
         const blob = new Blob([bytes], { type: mimeType || 'audio/wav' });
         const url = URL.createObjectURL(blob);
-        const audio = new Audio(url);
-        audio._objectUrl = url;
+        const audio = sharedAudioRef.current;
 
+        if (!audio) { URL.revokeObjectURL(url); resolve(); return; }
+
+        if (audio._objectUrl) URL.revokeObjectURL(audio._objectUrl);
+        audio._objectUrl = url;
         speakingUtteranceRef.current = audio;
 
         const safetyTimeout = setTimeout(() => { stopCurrentAudio(); }, 60000);
@@ -300,6 +317,7 @@ export default function ChatPanel({ onRouteReceived, onStartNavigation, navConte
         audio.onended = () => {
           clearTimeout(safetyTimeout);
           URL.revokeObjectURL(url);
+          audio._objectUrl = null;
           speakingUtteranceRef.current = null;
           speakResolveRef.current = null;
           resolve();
@@ -307,14 +325,17 @@ export default function ChatPanel({ onRouteReceived, onStartNavigation, navConte
         audio.onerror = () => {
           clearTimeout(safetyTimeout);
           URL.revokeObjectURL(url);
+          audio._objectUrl = null;
           speakingUtteranceRef.current = null;
           speakResolveRef.current = null;
           resolve();
         };
 
+        audio.src = url;
         audio.play().catch(() => {
           clearTimeout(safetyTimeout);
           URL.revokeObjectURL(url);
+          audio._objectUrl = null;
           speakingUtteranceRef.current = null;
           speakResolveRef.current = null;
           resolve();
@@ -449,7 +470,7 @@ export default function ChatPanel({ onRouteReceived, onStartNavigation, navConte
             "Hmm, you're getting kinda far from the route. You might want to turn around.",
             "Wait, I don't think this is right. You're off the route, let's get you back on track.",
           ]), urgent: true };
-          if (speakingUtteranceRef.current instanceof HTMLAudioElement) { speakingUtteranceRef.current.pause(); speakingUtteranceRef.current = null; }
+          stopCurrentAudio();
         } else if (minRouteDist < 40) {
           offRouteAlertedRef.current = false;
         }
@@ -468,7 +489,7 @@ export default function ChatPanel({ onRouteReceived, onStartNavigation, navConte
             "Okay, that's it, you've arrived! Look around, this is the place.",
             "We made it! You're at your destination. That wasn't too bad, right?",
           ]), urgent: false };
-          if (speakingUtteranceRef.current instanceof HTMLAudioElement) { speakingUtteranceRef.current.pause(); speakingUtteranceRef.current = null; }
+          stopCurrentAudio();
         }
         return;
       }
@@ -517,7 +538,7 @@ export default function ChatPanel({ onRouteReceived, onStartNavigation, navConte
           ]), urgent: true };
         }
         // Interrupt current speech for urgent turn alert
-        if (speakingUtteranceRef.current instanceof HTMLAudioElement) { speakingUtteranceRef.current.pause(); speakingUtteranceRef.current = null; }
+        stopCurrentAudio();
       }
     }, 400);
 
@@ -932,6 +953,20 @@ export default function ChatPanel({ onRouteReceived, onStartNavigation, navConte
       }]);
       return;
     }
+    // Create & unlock a persistent Audio element on this user gesture (fixes mobile autoplay)
+    if (!sharedAudioRef.current) {
+      sharedAudioRef.current = new Audio();
+    }
+    const audio = sharedAudioRef.current;
+    // Play a tiny silent WAV to unlock audio playback on iOS/Android
+    audio.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
+    audio.play().then(() => { audio.pause(); audio.currentTime = 0; }).catch(() => {});
+    // Also unlock browser SpeechSynthesis on mobile
+    if (window.speechSynthesis) {
+      const utter = new SpeechSynthesisUtterance('');
+      utter.volume = 0;
+      window.speechSynthesis.speak(utter);
+    }
     setCallActive(true);
     callActiveRef.current = true;
     const gen = ++callGenRef.current;
@@ -947,6 +982,11 @@ export default function ChatPanel({ onRouteReceived, onStartNavigation, navConte
       try { recognitionRef.current.abort(); } catch { /* ignore */ }
     }
     stopCurrentAudio();
+    // Clean up shared audio element
+    if (sharedAudioRef.current) {
+      sharedAudioRef.current.removeAttribute('src');
+      sharedAudioRef.current.load();
+    }
   };
 
   // --- Travel mode selection (text chat) ---
