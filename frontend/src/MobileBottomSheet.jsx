@@ -22,7 +22,7 @@ export default function MobileBottomSheet({ position, onPositionChange, children
   const snapPoints = useMemo(
     () => ({
       collapsed: windowHeight - 60,
-      peek: windowHeight * 0.55,
+      peek: windowHeight * 0.60,
       expanded: windowHeight * 0.08,
     }),
     [windowHeight]

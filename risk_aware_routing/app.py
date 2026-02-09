@@ -17,31 +17,53 @@ app = Flask(__name__)
 CORS(app)
 api = Blueprint('api', __name__)
 
+# Simple health check — responds before heavy init completes
+@app.route('/health')
+def health():
+    return jsonify({"status": "ok"})
+
 # Init Engine (Chicago) — uses cached graph for fast startup
 GRAPH_CACHE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'output_chicago', 'chicago_graph.graphml')
-engine = RoutingEngine("Chicago, Illinois, USA", cache_path=GRAPH_CACHE)
-engine.load_risk_api("../output_chicago/routing_risk_api.json")
+try:
+    engine = RoutingEngine("Chicago, Illinois, USA", cache_path=GRAPH_CACHE)
+    engine.load_risk_api("../output_chicago/routing_risk_api.json")
+    print("Routing engine loaded.")
+except Exception as e:
+    print(f"ERROR loading routing engine: {e}")
+    engine = None
 
 # Load static data for dynamic heatmap
-with open("../output_chicago/grid_risk.geojson", 'r') as f:
-    base_heatmap = json.load(f)
-with open("../output_chicago/time_patterns.json", 'r') as f:
-    time_patterns = json.load(f)
-
-# Create hourly multiplier lookup
-hourly_multipliers = {h['hour']: h['risk_multiplier'] for h in time_patterns['hourly']}
+base_heatmap = None
+time_patterns = None
+hourly_multipliers = {}
+try:
+    with open("../output_chicago/grid_risk.geojson", 'r') as f:
+        base_heatmap = json.load(f)
+    with open("../output_chicago/time_patterns.json", 'r') as f:
+        time_patterns = json.load(f)
+    hourly_multipliers = {h['hour']: h['risk_multiplier'] for h in time_patterns['hourly']}
+    print("Heatmap data loaded.")
+except Exception as e:
+    print(f"ERROR loading heatmap data: {e}")
 
 # Init Gemini AI service
 gemini_svc = None
 if os.environ.get('GEMINI_API_KEY'):
-    gemini_svc = GeminiService()
-    print("Gemini AI service initialized.")
+    try:
+        gemini_svc = GeminiService()
+        print("Gemini AI service initialized.")
+    except Exception as e:
+        print(f"ERROR initializing Gemini: {e}")
 else:
     print("WARNING: GEMINI_API_KEY not set. /chat endpoint will not work.")
 
 # Init Weather service (Chicago coordinates)
 weather_svc = WeatherService(lat=41.8781, lng=-87.6298)
-print(f"Weather: {weather_svc.get_weather()['current']['description']}")
+try:
+    weather_info = weather_svc.get_weather()
+    print(f"Weather: {weather_info['current']['description']}")
+except Exception as e:
+    print(f"Weather init warning (non-fatal): {e}")
 
 # Phrases that mean "use my GPS location"
 MY_LOCATION_PHRASES = {
@@ -88,9 +110,11 @@ def get_time_label(h):
 
 @api.route('/get-route', methods=['POST'])
 def get_route():
+    if not engine:
+        return jsonify({"status": "error", "message": "Routing engine not loaded"}), 503
     req = request.json
     # Expects: {"start": [lat, lng], "end": [lat, lng], "beta": 0.5, "hour": 17}
-    
+
     try:
         path = engine.get_route(
             start_coords=req['start'],
@@ -106,6 +130,8 @@ def get_route():
 
 @api.route('/compare-routes', methods=['POST'])
 def compare_routes():
+    if not engine:
+        return jsonify({"status": "error", "message": "Routing engine not loaded"}), 503
     req = request.json
     try:
         comparison = engine.get_comparison(
@@ -132,6 +158,8 @@ def get_weather():
 @api.route('/heatmap/<int:hour>', methods=['GET'])
 def get_heatmap(hour):
     """Returns risk heatmap GeoJSON adjusted for time + weather"""
+    if not base_heatmap:
+        return jsonify({"type": "FeatureCollection", "features": []})
     try:
         hour = max(0, min(23, hour))  # Clamp to valid range
         time_mult = hourly_multipliers.get(hour, 1.0)
@@ -161,6 +189,12 @@ def chat():
             "status": "error",
             "error_type": "no_api_key",
             "message": "Gemini AI is not configured. Please set GEMINI_API_KEY in the .env file."
+        })
+    if not engine:
+        return jsonify({
+            "status": "error",
+            "error_type": "engine_not_loaded",
+            "message": "Routing engine is still loading. Please try again in a moment."
         })
 
     user_message = request.json.get('message', '')

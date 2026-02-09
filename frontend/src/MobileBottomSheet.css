@@ -46,7 +46,7 @@
   display: flex;
   flex-direction: column;
   padding: 0 16px 16px;
-  gap: 12px;
+  gap: 10px;
   background: transparent !important;
   width: 100% !important;
   min-width: 100% !important;

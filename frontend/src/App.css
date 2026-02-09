@@ -809,20 +809,92 @@
     flex: none;
   }
 
-  /* Header compact on mobile */
-  .header h1 {
-    font-size: 18px;
+  /* --- Mobile UI cleanup: hide non-essential elements --- */
+
+  /* Hide static stats bar (never changes) */
+  .mobile-sheet-sidebar .stats-bar {
+    display: none;
   }
 
-  /* Stats bar wrap on small screens */
-  .stats-bar {
-    flex-wrap: wrap;
+  /* Hide footer */
+  .mobile-sheet-sidebar .footer {
+    display: none;
+  }
+
+  /* Compact header: hide subtitle, shrink logo, reduce spacing */
+  .mobile-sheet-sidebar .header {
+    padding-bottom: 8px;
     gap: 8px;
   }
 
-  /* Weather widget compact */
-  .weather-widget {
-    padding: 8px 12px;
+  .mobile-sheet-sidebar .header p {
+    display: none;
+  }
+
+  .mobile-sheet-sidebar .header .logo {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+  }
+
+  .mobile-sheet-sidebar .header .logo svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .mobile-sheet-sidebar .header h1 {
+    font-size: 16px;
+  }
+
+  /* Compact weather: single-line, hide description */
+  .mobile-sheet-sidebar .weather-widget {
+    padding: 6px 10px;
+    gap: 8px;
+    border-radius: 8px;
+  }
+
+  .mobile-sheet-sidebar .weather-icon {
+    font-size: 18px;
+  }
+
+  .mobile-sheet-sidebar .weather-temp {
+    font-size: 14px;
+  }
+
+  .mobile-sheet-sidebar .weather-desc {
+    display: none;
+  }
+
+  .mobile-sheet-sidebar .weather-info {
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .mobile-sheet-sidebar .weather-details {
+    flex-direction: row;
+    gap: 6px;
+    font-size: 10px;
+  }
+
+  /* Hide mode hint text */
+  .mobile-sheet-sidebar .mode-hint {
+    display: none;
+  }
+
+  /* Tighter section gaps */
+  .mobile-sheet-sidebar .section {
+    gap: 6px;
+  }
+
+  /* Slightly tighter tab switcher */
+  .mobile-sheet-sidebar .tab-switcher {
+    padding: 2px;
+  }
+
+  .mobile-sheet-sidebar .tab-btn {
+    padding: 8px;
+    font-size: 13px;
   }
 
   /* Slider thumb bigger for touch */
@@ -844,11 +916,6 @@
 
   .nav-btn {
     padding: 14px 8px;
-    font-size: 14px;
-  }
-
-  .tab-btn {
-    padding: 10px;
     font-size: 14px;
   }
 
@@ -883,16 +950,61 @@
     50% { opacity: 1; border-color: rgba(59, 130, 246, 0.7); }
   }
 
+  /* Map legend: move to top so it doesn't hide behind sheet */
   .map-legend {
-    bottom: 80px;
-    left: 12px;
-    padding: 10px 12px;
+    bottom: auto;
+    top: 60px;
+    left: 8px;
+    padding: 6px 10px;
+    font-size: 10px;
   }
+}
 
-  /* Footer stays at bottom */
-  .footer {
-    padding-top: 10px;
-  }
+/* ===== Mobile Options Accordion ===== */
+.mobile-options-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  cursor: pointer;
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 500;
+  width: 100%;
+  font-family: inherit;
+  transition: background 0.15s;
+}
+
+.mobile-options-toggle:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.mobile-options-chevron {
+  transition: transform 0.2s ease;
+  font-size: 10px;
+  color: #64748b;
+}
+
+.mobile-options-chevron.open {
+  transform: rotate(180deg);
+}
+
+.mobile-options-content {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+  transition: max-height 0.3s ease, opacity 0.2s ease;
+}
+
+.mobile-options-content.open {
+  max-height: 400px;
+  opacity: 1;
 }
 
 /* Small phones */

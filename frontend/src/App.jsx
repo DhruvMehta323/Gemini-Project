@@ -48,6 +48,7 @@ export default function App() {
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
   const [sheetPosition, setSheetPosition] = useState('peek');
   const [mapLoaded, setMapLoaded] = useState(false);
+  const [mobileOptionsOpen, setMobileOptionsOpen] = useState(false);
   const mapRef = useRef(null);
 
   // Mobile detection
@@ -352,17 +353,19 @@ export default function App() {
         </div>
       )}
 
-      {/* Heatmap Toggle */}
-      <div className="toggle-section">
-        <label className="toggle-label">
-          <input
-            type="checkbox"
-            checked={showHeatmap}
-            onChange={(e) => setShowHeatmap(e.target.checked)}
-          />
-          <span className="toggle-text">Risk heatmap</span>
-        </label>
-      </div>
+      {/* Heatmap Toggle — desktop only (on mobile, moved into options accordion) */}
+      {!isMobile && (
+        <div className="toggle-section">
+          <label className="toggle-label">
+            <input
+              type="checkbox"
+              checked={showHeatmap}
+              onChange={(e) => setShowHeatmap(e.target.checked)}
+            />
+            <span className="toggle-text">Risk heatmap</span>
+          </label>
+        </div>
+      )}
 
       {/* Tab Switcher */}
       <div className="tab-switcher">
@@ -461,51 +464,108 @@ export default function App() {
             </div>
           </div>
 
-          {/* Time Slider */}
-          <div className="section">
-            <div className="section-header">
-              <label className="section-label">Departure time</label>
-              <span className="time-display">{getTimeLabel(hour)}</span>
-            </div>
-            <input
-              type="range"
-              min="0"
-              max="23"
-              value={hour}
-              onChange={(e) => setHour(parseInt(e.target.value))}
-              className="slider"
-            />
-            <div className="slider-labels">
-              <span>12am</span>
-              <span>6am</span>
-              <span>12pm</span>
-              <span>6pm</span>
-              <span>11pm</span>
-            </div>
-          </div>
+          {/* Time + Safety Sliders: desktop inline, mobile in collapsible accordion */}
+          {isMobile ? (
+            <>
+              <button
+                className="mobile-options-toggle"
+                onClick={() => setMobileOptionsOpen(prev => !prev)}
+              >
+                <span>
+                  Options{showHeatmap ? ' · Heatmap' : ''} · {getTimeLabel(hour)} · {beta > 6 ? 'Safer' : beta < 3 ? 'Faster' : 'Balanced'}
+                </span>
+                <span className={`mobile-options-chevron ${mobileOptionsOpen ? 'open' : ''}`}>▼</span>
+              </button>
+              <div className={`mobile-options-content ${mobileOptionsOpen ? 'open' : ''}`}>
+                <div className="toggle-section">
+                  <label className="toggle-label">
+                    <input
+                      type="checkbox"
+                      checked={showHeatmap}
+                      onChange={(e) => setShowHeatmap(e.target.checked)}
+                    />
+                    <span className="toggle-text">Risk heatmap</span>
+                  </label>
+                </div>
+                <div className="section">
+                  <div className="section-header">
+                    <label className="section-label">Departure time</label>
+                    <span className="time-display">{getTimeLabel(hour)}</span>
+                  </div>
+                  <input
+                    type="range" min="0" max="23" value={hour}
+                    onChange={(e) => setHour(parseInt(e.target.value))}
+                    className="slider"
+                  />
+                  <div className="slider-labels">
+                    <span>12am</span><span>6am</span><span>12pm</span><span>6pm</span><span>11pm</span>
+                  </div>
+                </div>
+                <div className="section">
+                  <div className="section-header">
+                    <label className="section-label">Safety priority</label>
+                    <span className={`priority-badge ${beta > 6 ? 'green' : beta < 3 ? 'orange' : 'blue'}`}>
+                      {beta > 6 ? 'Safer' : beta < 3 ? 'Faster' : 'Balanced'}
+                    </span>
+                  </div>
+                  <input
+                    type="range" min="0" max="10" step="0.5" value={beta}
+                    onChange={(e) => setBeta(parseFloat(e.target.value))}
+                    className="slider"
+                  />
+                  <div className="slider-labels">
+                    <span>Speed</span><span>Safety</span>
+                  </div>
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="section">
+                <div className="section-header">
+                  <label className="section-label">Departure time</label>
+                  <span className="time-display">{getTimeLabel(hour)}</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="23"
+                  value={hour}
+                  onChange={(e) => setHour(parseInt(e.target.value))}
+                  className="slider"
+                />
+                <div className="slider-labels">
+                  <span>12am</span>
+                  <span>6am</span>
+                  <span>12pm</span>
+                  <span>6pm</span>
+                  <span>11pm</span>
+                </div>
+              </div>
 
-          {/* Safety Slider */}
-          <div className="section">
-            <div className="section-header">
-              <label className="section-label">Safety priority</label>
-              <span className={`priority-badge ${beta > 6 ? 'green' : beta < 3 ? 'orange' : 'blue'}`}>
-                {beta > 6 ? 'Safer' : beta < 3 ? 'Faster' : 'Balanced'}
-              </span>
-            </div>
-            <input
-              type="range"
-              min="0"
-              max="10"
-              step="0.5"
-              value={beta}
-              onChange={(e) => setBeta(parseFloat(e.target.value))}
-              className="slider"
-            />
-            <div className="slider-labels">
-              <span>Speed</span>
-              <span>Safety</span>
-            </div>
-          </div>
+              <div className="section">
+                <div className="section-header">
+                  <label className="section-label">Safety priority</label>
+                  <span className={`priority-badge ${beta > 6 ? 'green' : beta < 3 ? 'orange' : 'blue'}`}>
+                    {beta > 6 ? 'Safer' : beta < 3 ? 'Faster' : 'Balanced'}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="10"
+                  step="0.5"
+                  value={beta}
+                  onChange={(e) => setBeta(parseFloat(e.target.value))}
+                  className="slider"
+                />
+                <div className="slider-labels">
+                  <span>Speed</span>
+                  <span>Safety</span>
+                </div>
+              </div>
+            </>
+          )}
 
           {/* Calculate Button */}
           <button

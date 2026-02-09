@@ -9,3 +9,4 @@ geopandas
 h3
 google-genai
 python-dotenv
+requests
