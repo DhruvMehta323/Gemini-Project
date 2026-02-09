@@ -164,6 +164,12 @@ export default function ChatPanel({ onRouteReceived, onStartNavigation, navConte
     pendingRouteRef.current = pendingRoute;
   }, [pendingRoute]);
 
+  // Keep hasRoute ref in sync for voice mode async access (avoids stale closure in callLoop)
+  const hasRouteRef = useRef(false);
+  useEffect(() => {
+    hasRouteRef.current = hasRoute;
+  }, [hasRoute]);
+
   // Call duration timer
   useEffect(() => {
     if (callActive) {
@@ -808,7 +814,7 @@ export default function ChatPanel({ onRouteReceived, onStartNavigation, navConte
       return;
     }
     // Generic navigation commands (no safest/fastest specified) — default to safest
-    if (hasRoute && (/\b(start|begin|let'?s?\s*(start|go|begin)|navigate|navigation)\b/.test(lower)) &&
+    if (hasRouteRef.current && (/\b(start|begin|let'?s?\s*(start|go|begin)|navigate|navigation)\b/.test(lower)) &&
         !lower.includes('safest') && !lower.includes('fastest')) {
       const useSim = lower.includes('sim') || lower.includes('demo');
       setCallState('speaking');

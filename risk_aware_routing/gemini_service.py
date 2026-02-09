@@ -142,10 +142,11 @@ Return ONLY valid JSON with this schema:
 }}
 
 Rules:
-- Both start_name and end_name are REQUIRED. If missing, set to null.
+- Both start_name and end_name are REQUIRED. If one is missing, set to null.
+- IMPORTANT: If the user only mentions ONE place (e.g. "I want to go to Navy Pier", "take me to Wrigley Field", "how do I get to the Bean"), assume they want to go FROM their current location. Set start_name to "my current location" and end_name to the place they mentioned.
 - Recognize Chicago landmarks, addresses, cross-streets, neighborhoods.
 - For start_name and end_name, use the FULL official name of the place (e.g. "Navy Pier" not "the pier", "Millennium Park" not "the park", "Willis Tower" not "the tower"). Be specific.
-- If user says "here", "my location", "current location", "where I am", "my position", set start_name to "my current location" exactly.
+- If user says "here", "my location", "current location", "where I am", "my position", set that to "my current location" exactly.
 - Detect travel mode from context: "drive"/"driving"/"car" -> "driving", "bike"/"cycle"/"cycling" -> "cycling", "walk"/"walking"/"on foot" -> "walking".
 - travel_mode_explicit: set to true ONLY if the user explicitly mentions a travel mode word (walk, walking, drive, driving, car, bike, biking, cycle, cycling, on foot). Set to false if you are defaulting because they did NOT mention any travel mode.
 - Time: "11 PM" -> 23, "morning" -> 8, "evening" -> 19, "midnight" -> 0, "rush hour" -> 17. Default: {current_hour}.
@@ -167,7 +168,8 @@ MESSAGE: {user_message}"""
                 text = text.split('\n', 1)[1].rsplit('```', 1)[0].strip()
             parsed = json.loads(text)
 
-            if not parsed.get('start_name') or not parsed.get('end_name'):
+            # Return partial parse (with nulls) so the caller can auto-fill from user location
+            if not parsed.get('start_name') and not parsed.get('end_name'):
                 return None
 
             parsed['hour'] = max(0, min(23, int(parsed.get('hour', current_hour))))

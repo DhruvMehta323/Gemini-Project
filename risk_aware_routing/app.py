@@ -198,6 +198,12 @@ def chat():
         )
         parsed = parse_f.result()
 
+        # Auto-fill missing start/end with user's current location (like Google Maps)
+        if parsed and not parsed.get('start_name') and parsed.get('end_name') and user_coords:
+            parsed['start_name'] = 'my current location'
+        if parsed and parsed.get('start_name') and not parsed.get('end_name') and user_coords:
+            parsed['end_name'] = 'my current location'
+
         if not parsed or not parsed.get('start_name') or not parsed.get('end_name'):
             # Not a route — use the pre-computed speculative chat reply
             reply = chat_f.result()
