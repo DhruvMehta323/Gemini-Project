@@ -1091,6 +1091,45 @@ export default function ChatPanel({ onRouteReceived, onStartNavigation, navConte
 
   // --- Call overlay ---
   if (callActive) {
+    const isMobileCall = window.innerWidth <= 768;
+
+    // Mobile: compact call card instead of full-screen overlay
+    if (isMobileCall) {
+      return (
+        <div className="chat-panel">
+          <div className="mobile-call-card" onClick={callState === 'speaking' ? handleInterrupt : undefined}>
+            <div className={`mobile-call-orb ${callState}`}>
+              {callState === 'listening' && '🎙️'}
+              {callState === 'processing' && '🧠'}
+              {callState === 'speaking' && '🔊'}
+              {callState === 'idle' && '📞'}
+            </div>
+            <div className="mobile-call-info">
+              <span className="mobile-call-state">
+                {callState === 'listening' && 'Listening...'}
+                {callState === 'processing' && 'Thinking...'}
+                {callState === 'speaking' && 'Speaking...'}
+                {callState === 'idle' && 'Connecting...'}
+              </span>
+              <span className="mobile-call-timer">{formatCallTime(callDuration)}</span>
+            </div>
+            <button className="mobile-call-end" onClick={(e) => { e.stopPropagation(); endCall(); }}>
+              End
+            </button>
+          </div>
+          {transcript && callState === 'listening' && (
+            <div className="mobile-call-transcript">"{transcript}"</div>
+          )}
+          {hasRoute && onStartNavigation && (
+            <div className="call-nav-hint" style={{ marginTop: 8 }}>
+              Say "navigate safest" or "navigate fastest"
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // Desktop: full-screen call overlay (unchanged)
     return (
       <div className="chat-panel">
         <div className="call-overlay">

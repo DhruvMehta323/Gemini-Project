@@ -634,6 +634,118 @@
   color: #cbd5e1;
 }
 
+/* ===== Mobile Call Card (compact, stays in bottom sheet) ===== */
+.mobile-call-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  background: rgba(16, 185, 129, 0.08);
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.mobile-call-card:active {
+  background: rgba(16, 185, 129, 0.15);
+}
+
+.mobile-call-orb {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  flex-shrink: 0;
+  transition: background 0.4s, box-shadow 0.4s;
+}
+
+.mobile-call-orb.listening {
+  background: rgba(239, 68, 68, 0.15);
+  box-shadow: 0 0 20px rgba(239, 68, 68, 0.4);
+  animation: mobile-orb-pulse 2s infinite;
+}
+
+.mobile-call-orb.processing {
+  background: rgba(139, 92, 246, 0.15);
+  box-shadow: 0 0 20px rgba(139, 92, 246, 0.4);
+  animation: mobile-orb-spin 1.5s infinite linear;
+}
+
+.mobile-call-orb.speaking {
+  background: rgba(16, 185, 129, 0.15);
+  box-shadow: 0 0 20px rgba(16, 185, 129, 0.4);
+  animation: mobile-orb-breathe 1.5s infinite ease-in-out;
+}
+
+.mobile-call-orb.idle {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+@keyframes mobile-orb-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+}
+
+@keyframes mobile-orb-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes mobile-orb-breathe {
+  0%, 100% { transform: scale(1); opacity: 0.8; }
+  50% { transform: scale(1.05); opacity: 1; }
+}
+
+.mobile-call-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.mobile-call-state {
+  font-size: 14px;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.mobile-call-timer {
+  font-size: 12px;
+  color: #64748b;
+  font-variant-numeric: tabular-nums;
+}
+
+.mobile-call-end {
+  padding: 10px 18px;
+  border: none;
+  border-radius: 24px;
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+  color: white;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.2s;
+  font-family: inherit;
+}
+
+.mobile-call-end:active {
+  transform: scale(0.95);
+}
+
+.mobile-call-transcript {
+  font-size: 13px;
+  color: #94a3b8;
+  font-style: italic;
+  text-align: center;
+  padding: 8px 0;
+}
+
 /* ===== Mobile Responsive ===== */
 @media (max-width: 768px) {
   .chat-panel {
@@ -681,24 +793,5 @@
   .travel-mode-btn {
     padding: 14px 8px;
     font-size: 14px;
-  }
-
-  /* Call overlay full screen on mobile */
-  .call-overlay {
-    padding: 24px 16px;
-  }
-
-  .call-orb {
-    width: 120px;
-    height: 120px;
-  }
-
-  .call-orb-inner {
-    font-size: 36px;
-  }
-
-  .call-end-btn {
-    padding: 16px 32px;
-    font-size: 16px;
   }
 }

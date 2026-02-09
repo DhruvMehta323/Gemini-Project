@@ -4,6 +4,8 @@ import 'mapbox-gl/dist/mapbox-gl.css';
 import { getBearing } from './navUtils';
 import ChatPanel from './ChatPanel';
 import NavigationPanel from './NavigationPanel';
+import MobileBottomSheet from './MobileBottomSheet';
+import MobileNavBar from './MobileNavBar';
 import './App.css';
 
 export default function App() {
@@ -42,9 +44,24 @@ export default function App() {
   const [navAutoStart, setNavAutoStart] = useState(null);
   const [weather, setWeather] = useState(null);
   const [userCoords, setUserCoords] = useState(null);
-  const [mobileView, setMobileView] = useState('panel');
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+  const [sheetPosition, setSheetPosition] = useState('peek');
   const [mapLoaded, setMapLoaded] = useState(false);
   const mapRef = useRef(null);
+
+  // Mobile detection
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth <= 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Auto-collapse sheet when active navigation starts
+  useEffect(() => {
+    if (isMobile && showNav && isActivelyNavigating) {
+      setSheetPosition('collapsed');
+    }
+  }, [isMobile, showNav, isActivelyNavigating]);
 
   // useCallback so voice callLoop always has a stable reference (avoids stale closures)
   const handleChatRoute = useCallback((chatRouteData, startCoords, endCoords, chatHour, chatBeta, chatTravelMode) => {
@@ -53,7 +70,7 @@ export default function App() {
     setHour(chatHour ?? 17);
     setBeta(chatBeta ?? 5);
     if (chatTravelMode) setTravelMode(chatTravelMode);
-    if (window.innerWidth <= 768) setMobileView('map');
+    if (window.innerWidth <= 768) setSheetPosition('peek');
   }, []);
 
   // Use ref so startNavigation always reads the LATEST routeData (not a stale closure)
@@ -98,6 +115,8 @@ export default function App() {
     setNavAutoStart(null);
     // Reset map to overview (exit navigation view)
     setViewState(prev => ({ ...prev, zoom: 14, pitch: 40, bearing: 0 }));
+    // Re-open bottom sheet on mobile so user can see chat
+    if (window.innerWidth <= 768) setSheetPosition('peek');
   };
 
   // Load risk heatmap data based on selected hour
@@ -180,9 +199,10 @@ export default function App() {
     const lngs = allCoords.map(p => Number(p[1]));
     const lats = allCoords.map(p => Number(p[0]));
     try {
+      const isMobileNow = window.innerWidth <= 768;
       map.fitBounds(
         [[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]],
-        { padding: 80, duration: 1000 }
+        { padding: isMobileNow ? { top: 80, left: 40, right: 40, bottom: Math.round(window.innerHeight * 0.5) } : 80, duration: 1000 }
       );
     } catch (err) {
       console.error('[Map] fitBounds error:', err);
@@ -279,301 +299,298 @@ export default function App() {
     return `${h - 12} PM`;
   };
 
-  return (
-    <div className={`app-container ${mobileView === 'map' ? 'mobile-map' : ''}`}>
-      {/* Mobile view toggle */}
-      <button className="mobile-toggle" onClick={() => setMobileView(v => v === 'map' ? 'panel' : 'map')}>
-        {mobileView === 'map' ? (
-          <><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> Chat</>
-        ) : (
-          <><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg> Map</>
-        )}
-      </button>
-      {/* Sidebar */}
-      <div className="sidebar">
-        {/* Header */}
-        <div className="header">
-          <div className="logo">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s-8-4.5-8-11.8A8 8 0 0 1 12 2a8 8 0 0 1 8 8.2c0 7.3-8 11.8-8 11.8z"/><circle cx="12" cy="10" r="3"/></svg>
-          </div>
-          <div>
-            <h1>SafePath</h1>
-            <p>Chicago Risk-Aware Navigation</p>
-          </div>
-          <span className="gemini-badge">Gemini 3</span>
+  // Sidebar inner content — shared between desktop sidebar and mobile bottom sheet
+  const sidebarContent = (
+    <>
+      {/* Header */}
+      <div className="header">
+        <div className="logo">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s-8-4.5-8-11.8A8 8 0 0 1 12 2a8 8 0 0 1 8 8.2c0 7.3-8 11.8-8 11.8z"/><circle cx="12" cy="10" r="3"/></svg>
         </div>
-
-        {/* Stats */}
-        <div className="stats-bar">
-          <div className="stat-item">
-            <span className="stat-num">49K+</span>
-            <span className="stat-label">crashes analyzed</span>
-          </div>
-          <div className="stat-sep"></div>
-          <div className="stat-item">
-            <span className="stat-num cyan">18K+</span>
-            <span className="stat-label">crime reports</span>
-          </div>
-          <div className="stat-sep"></div>
-          <div className="stat-item">
-            <span className="stat-num green">4.8K</span>
-            <span className="stat-label">risk zones</span>
-          </div>
+        <div>
+          <h1>SafePath</h1>
+          <p>Chicago Risk-Aware Navigation</p>
         </div>
+        <span className="gemini-badge">Gemini 3</span>
+      </div>
 
-        {/* Weather Widget */}
-        {weather?.current && weather.current.temperature !== null && (
-          <div className="weather-widget">
-            <span className="weather-icon">{weather.current.icon}</span>
-            <div className="weather-info">
-              <span className="weather-temp">{Math.round(weather.current.temperature)}°F</span>
-              <span className="weather-desc">{weather.current.description}</span>
-            </div>
-            <div className="weather-details">
-              {weather.current.wind_speed > 0 && <span>💨 {weather.current.wind_speed} mph</span>}
-              {weather.current.risk_multiplier > 1.1 && (
-                <span className="weather-risk">⚠️ +{Math.round((weather.current.risk_multiplier - 1) * 100)}% risk</span>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Heatmap Toggle */}
-        <div className="toggle-section">
-          <label className="toggle-label">
-            <input
-              type="checkbox"
-              checked={showHeatmap}
-              onChange={(e) => setShowHeatmap(e.target.checked)}
-            />
-            <span className="toggle-text">Risk heatmap</span>
-          </label>
+      {/* Stats */}
+      <div className="stats-bar">
+        <div className="stat-item">
+          <span className="stat-num">49K+</span>
+          <span className="stat-label">crashes analyzed</span>
         </div>
-
-        {/* Tab Switcher */}
-        <div className="tab-switcher">
-          <button
-            className={`tab-btn ${activeTab === 'manual' ? 'active' : ''}`}
-            onClick={() => setActiveTab('manual')}
-          >
-            Manual
-          </button>
-          <button
-            className={`tab-btn ${activeTab === 'chat' ? 'active' : ''}`}
-            onClick={() => setActiveTab('chat')}
-          >
-            AI Chat
-          </button>
+        <div className="stat-sep"></div>
+        <div className="stat-item">
+          <span className="stat-num cyan">18K+</span>
+          <span className="stat-label">crime reports</span>
         </div>
-
-        {activeTab === 'manual' ? (
-          <>
-            {/* Route Input */}
-            <div className="section">
-              <label className="section-label">Route</label>
-              <div className="route-input-group">
-                <div className={`route-input-row ${mode === 'start' ? 'active' : ''} ${points.start ? 'set' : ''}`} onClick={() => setMode('start')}>
-                  <div className="route-dot origin"></div>
-                  <span>{points.start ? `${points.start[0].toFixed(4)}, ${points.start[1].toFixed(4)}` : 'Click map to set origin'}</span>
-                  {!points.start && userCoords && (
-                    <button
-                      className="use-location-btn"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setPoints(p => ({ ...p, start: userCoords }));
-                        setMode('end');
-                      }}
-                      title="Use my current location"
-                    >
-                      📍
-                    </button>
-                  )}
-                </div>
-                <div className="route-input-divider"></div>
-                <div className={`route-input-row ${mode === 'end' ? 'active' : ''} ${points.end ? 'set' : ''}`} onClick={() => setMode('end')}>
-                  <div className="route-dot destination"></div>
-                  <span>{points.end ? `${points.end[0].toFixed(4)}, ${points.end[1].toFixed(4)}` : 'Click map to set destination'}</span>
-                  {!points.end && userCoords && (
-                    <button
-                      className="use-location-btn"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setPoints(p => ({ ...p, end: userCoords }));
-                      }}
-                      title="Use my current location"
-                    >
-                      📍
-                    </button>
-                  )}
-                </div>
-              </div>
-              {(points.start || points.end) && (
-                <button onClick={resetPoints} className="reset-btn">Clear route</button>
-              )}
-            </div>
-
-            {/* Travel Mode */}
-            <div className="section">
-              <label className="section-label">Travel mode</label>
-              <div className="mode-switcher">
-                <button
-                  className={`mode-btn ${travelMode === 'walking' ? 'active' : ''}`}
-                  onClick={() => setTravelMode('walking')}
-                >
-                  Walk
-                </button>
-                <button
-                  className={`mode-btn ${travelMode === 'cycling' ? 'active' : ''}`}
-                  onClick={() => setTravelMode('cycling')}
-                >
-                  Bike
-                </button>
-                <button
-                  className={`mode-btn ${travelMode === 'driving' ? 'active' : ''}`}
-                  onClick={() => setTravelMode('driving')}
-                >
-                  Drive
-                </button>
-              </div>
-              <div className="mode-hint">
-                {travelMode === 'walking' && 'Crime risk weighted 70%, crashes 30%'}
-                {travelMode === 'cycling' && 'Crime + crash risk weighted equally'}
-                {travelMode === 'driving' && 'Crash risk weighted 90%, crime 10%'}
-              </div>
-            </div>
-
-            {/* Time Slider */}
-            <div className="section">
-              <div className="section-header">
-                <label className="section-label">Departure time</label>
-                <span className="time-display">{getTimeLabel(hour)}</span>
-              </div>
-              <input
-                type="range"
-                min="0"
-                max="23"
-                value={hour}
-                onChange={(e) => setHour(parseInt(e.target.value))}
-                className="slider"
-              />
-              <div className="slider-labels">
-                <span>12am</span>
-                <span>6am</span>
-                <span>12pm</span>
-                <span>6pm</span>
-                <span>11pm</span>
-              </div>
-            </div>
-
-            {/* Safety Slider */}
-            <div className="section">
-              <div className="section-header">
-                <label className="section-label">Safety priority</label>
-                <span className={`priority-badge ${beta > 6 ? 'green' : beta < 3 ? 'orange' : 'blue'}`}>
-                  {beta > 6 ? 'Safer' : beta < 3 ? 'Faster' : 'Balanced'}
-                </span>
-              </div>
-              <input
-                type="range"
-                min="0"
-                max="10"
-                step="0.5"
-                value={beta}
-                onChange={(e) => setBeta(parseFloat(e.target.value))}
-                className="slider"
-              />
-              <div className="slider-labels">
-                <span>Speed</span>
-                <span>Safety</span>
-              </div>
-            </div>
-
-            {/* Calculate Button */}
-            <button
-              onClick={runAnalysis}
-              disabled={loading || !points.start || !points.end}
-              className="calculate-btn"
-            >
-              {loading ? 'Analyzing routes...' : 'Calculate routes'}
-            </button>
-
-            {/* Results */}
-            {routeData && (
-              <div className="results">
-                <div className="results-header">Route comparison</div>
-
-                <div className="result-cards">
-                  <div className="result-card green">
-                    <span className="result-label">Risk reduction</span>
-                    <span className="result-value">{routeData.metrics.reduction_in_risk_pct}%</span>
-                  </div>
-                  <div className="result-card orange">
-                    <span className="result-label">Extra time</span>
-                    <span className="result-value">+{Math.round(routeData.metrics.extra_time_seconds)}s</span>
-                  </div>
-                </div>
-
-                <div className="comparison">
-                  <div className="compare-item">
-                    <div className="dot amber"></div>
-                    <span>Fastest: {routeData.metrics.fastest.total_risk.toFixed(0)} risk</span>
-                  </div>
-                  <div className="compare-item">
-                    <div className="dot green"></div>
-                    <span>Safest: {routeData.metrics.safest.total_risk.toFixed(0)} risk</span>
-                  </div>
-                </div>
-
-                {/* Navigate buttons */}
-                {!showNav && (
-                  <div className="nav-buttons">
-                    <button className="nav-btn safest" onClick={() => startNavigation('safest')}>
-                      Navigate safest
-                    </button>
-                    <button className="nav-btn fastest" onClick={() => startNavigation('fastest')}>
-                      Navigate fastest
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Navigation Panel */}
-            {showNav && navRoute && (
-              <NavigationPanel
-                route={navRoute}
-                totalTime={navTime}
-                onPositionUpdate={setNavPosition}
-                onNavStateUpdate={handleNavStateUpdate}
-                onClose={closeNavigation}
-                autoStart={navAutoStart}
-              />
-            )}
-          </>
-        ) : (
-          <>
-            <ChatPanel onRouteReceived={handleChatRoute} onStartNavigation={startNavigation} navContext={navContext} userCoords={userCoords} weather={weather} />
-            {showNav && navRoute && (
-              <NavigationPanel
-                route={navRoute}
-                totalTime={navTime}
-                onPositionUpdate={setNavPosition}
-                onNavStateUpdate={handleNavStateUpdate}
-                onClose={closeNavigation}
-                autoStart={navAutoStart}
-              />
-            )}
-          </>
-        )}
-
-        {/* Footer */}
-        <div className="footer">
-          <span>Chicago Open Data + Gemini 3 AI</span>
-          <span className="status">● Online</span>
+        <div className="stat-sep"></div>
+        <div className="stat-item">
+          <span className="stat-num green">4.8K</span>
+          <span className="stat-label">risk zones</span>
         </div>
       </div>
 
-      {/* Map */}
+      {/* Weather Widget */}
+      {weather?.current && weather.current.temperature !== null && (
+        <div className="weather-widget">
+          <span className="weather-icon">{weather.current.icon}</span>
+          <div className="weather-info">
+            <span className="weather-temp">{Math.round(weather.current.temperature)}°F</span>
+            <span className="weather-desc">{weather.current.description}</span>
+          </div>
+          <div className="weather-details">
+            {weather.current.wind_speed > 0 && <span>💨 {weather.current.wind_speed} mph</span>}
+            {weather.current.risk_multiplier > 1.1 && (
+              <span className="weather-risk">⚠️ +{Math.round((weather.current.risk_multiplier - 1) * 100)}% risk</span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Heatmap Toggle */}
+      <div className="toggle-section">
+        <label className="toggle-label">
+          <input
+            type="checkbox"
+            checked={showHeatmap}
+            onChange={(e) => setShowHeatmap(e.target.checked)}
+          />
+          <span className="toggle-text">Risk heatmap</span>
+        </label>
+      </div>
+
+      {/* Tab Switcher */}
+      <div className="tab-switcher">
+        <button
+          className={`tab-btn ${activeTab === 'manual' ? 'active' : ''}`}
+          onClick={() => setActiveTab('manual')}
+        >
+          Manual
+        </button>
+        <button
+          className={`tab-btn ${activeTab === 'chat' ? 'active' : ''}`}
+          onClick={() => setActiveTab('chat')}
+        >
+          AI Chat
+        </button>
+      </div>
+
+      {activeTab === 'manual' ? (
+        <>
+          {/* Route Input */}
+          <div className="section">
+            <label className="section-label">Route</label>
+            <div className="route-input-group">
+              <div className={`route-input-row ${mode === 'start' ? 'active' : ''} ${points.start ? 'set' : ''}`} onClick={() => setMode('start')}>
+                <div className="route-dot origin"></div>
+                <span>{points.start ? `${points.start[0].toFixed(4)}, ${points.start[1].toFixed(4)}` : 'Click map to set origin'}</span>
+                {!points.start && userCoords && (
+                  <button
+                    className="use-location-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setPoints(p => ({ ...p, start: userCoords }));
+                      setMode('end');
+                    }}
+                    title="Use my current location"
+                  >
+                    📍
+                  </button>
+                )}
+              </div>
+              <div className="route-input-divider"></div>
+              <div className={`route-input-row ${mode === 'end' ? 'active' : ''} ${points.end ? 'set' : ''}`} onClick={() => setMode('end')}>
+                <div className="route-dot destination"></div>
+                <span>{points.end ? `${points.end[0].toFixed(4)}, ${points.end[1].toFixed(4)}` : 'Click map to set destination'}</span>
+                {!points.end && userCoords && (
+                  <button
+                    className="use-location-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setPoints(p => ({ ...p, end: userCoords }));
+                    }}
+                    title="Use my current location"
+                  >
+                    📍
+                  </button>
+                )}
+              </div>
+            </div>
+            {(points.start || points.end) && (
+              <button onClick={resetPoints} className="reset-btn">Clear route</button>
+            )}
+          </div>
+
+          {/* Travel Mode */}
+          <div className="section">
+            <label className="section-label">Travel mode</label>
+            <div className="mode-switcher">
+              <button
+                className={`mode-btn ${travelMode === 'walking' ? 'active' : ''}`}
+                onClick={() => setTravelMode('walking')}
+              >
+                Walk
+              </button>
+              <button
+                className={`mode-btn ${travelMode === 'cycling' ? 'active' : ''}`}
+                onClick={() => setTravelMode('cycling')}
+              >
+                Bike
+              </button>
+              <button
+                className={`mode-btn ${travelMode === 'driving' ? 'active' : ''}`}
+                onClick={() => setTravelMode('driving')}
+              >
+                Drive
+              </button>
+            </div>
+            <div className="mode-hint">
+              {travelMode === 'walking' && 'Crime risk weighted 70%, crashes 30%'}
+              {travelMode === 'cycling' && 'Crime + crash risk weighted equally'}
+              {travelMode === 'driving' && 'Crash risk weighted 90%, crime 10%'}
+            </div>
+          </div>
+
+          {/* Time Slider */}
+          <div className="section">
+            <div className="section-header">
+              <label className="section-label">Departure time</label>
+              <span className="time-display">{getTimeLabel(hour)}</span>
+            </div>
+            <input
+              type="range"
+              min="0"
+              max="23"
+              value={hour}
+              onChange={(e) => setHour(parseInt(e.target.value))}
+              className="slider"
+            />
+            <div className="slider-labels">
+              <span>12am</span>
+              <span>6am</span>
+              <span>12pm</span>
+              <span>6pm</span>
+              <span>11pm</span>
+            </div>
+          </div>
+
+          {/* Safety Slider */}
+          <div className="section">
+            <div className="section-header">
+              <label className="section-label">Safety priority</label>
+              <span className={`priority-badge ${beta > 6 ? 'green' : beta < 3 ? 'orange' : 'blue'}`}>
+                {beta > 6 ? 'Safer' : beta < 3 ? 'Faster' : 'Balanced'}
+              </span>
+            </div>
+            <input
+              type="range"
+              min="0"
+              max="10"
+              step="0.5"
+              value={beta}
+              onChange={(e) => setBeta(parseFloat(e.target.value))}
+              className="slider"
+            />
+            <div className="slider-labels">
+              <span>Speed</span>
+              <span>Safety</span>
+            </div>
+          </div>
+
+          {/* Calculate Button */}
+          <button
+            onClick={runAnalysis}
+            disabled={loading || !points.start || !points.end}
+            className="calculate-btn"
+          >
+            {loading ? 'Analyzing routes...' : 'Calculate routes'}
+          </button>
+
+          {/* Results */}
+          {routeData && (
+            <div className="results">
+              <div className="results-header">Route comparison</div>
+
+              <div className="result-cards">
+                <div className="result-card green">
+                  <span className="result-label">Risk reduction</span>
+                  <span className="result-value">{routeData.metrics.reduction_in_risk_pct}%</span>
+                </div>
+                <div className="result-card orange">
+                  <span className="result-label">Extra time</span>
+                  <span className="result-value">+{Math.round(routeData.metrics.extra_time_seconds)}s</span>
+                </div>
+              </div>
+
+              <div className="comparison">
+                <div className="compare-item">
+                  <div className="dot amber"></div>
+                  <span>Fastest: {routeData.metrics.fastest.total_risk.toFixed(0)} risk</span>
+                </div>
+                <div className="compare-item">
+                  <div className="dot green"></div>
+                  <span>Safest: {routeData.metrics.safest.total_risk.toFixed(0)} risk</span>
+                </div>
+              </div>
+
+              {/* Navigate buttons */}
+              {!showNav && (
+                <div className="nav-buttons">
+                  <button className="nav-btn safest" onClick={() => startNavigation('safest')}>
+                    Navigate safest
+                  </button>
+                  <button className="nav-btn fastest" onClick={() => startNavigation('fastest')}>
+                    Navigate fastest
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Navigation Panel */}
+          {showNav && navRoute && (
+            <NavigationPanel
+              route={navRoute}
+              totalTime={navTime}
+              onPositionUpdate={setNavPosition}
+              onNavStateUpdate={handleNavStateUpdate}
+              onClose={closeNavigation}
+              autoStart={navAutoStart}
+            />
+          )}
+        </>
+      ) : (
+        <>
+          <ChatPanel onRouteReceived={handleChatRoute} onStartNavigation={startNavigation} navContext={navContext} userCoords={userCoords} weather={weather} />
+          {showNav && navRoute && (
+            <NavigationPanel
+              route={navRoute}
+              totalTime={navTime}
+              onPositionUpdate={setNavPosition}
+              onNavStateUpdate={handleNavStateUpdate}
+              onClose={closeNavigation}
+              autoStart={navAutoStart}
+            />
+          )}
+        </>
+      )}
+
+      {/* Footer */}
+      <div className="footer">
+        <span>Chicago Open Data + Gemini 3 AI</span>
+        <span className="status">● Online</span>
+      </div>
+    </>
+  );
+
+  return (
+    <div className="app-container">
+      {/* Desktop: classic sidebar layout */}
+      {!isMobile && <div className="sidebar">{sidebarContent}</div>}
+
+      {/* Map — always visible */}
       <div className="map-container">
         <Map
           ref={mapRef}
@@ -745,6 +762,29 @@ export default function App() {
           )}
         </div>
       </div>
+
+      {/* Mobile: compact nav bar at top during active navigation */}
+      {isMobile && (
+        <MobileNavBar
+          show={showNav && isActivelyNavigating}
+          instruction={navInstructions[navCurrentStep] || null}
+          nextInstruction={navInstructions[navCurrentStep + 1] || null}
+          progress={navInstructions.length > 1 ? Math.round((navCurrentStep / (navInstructions.length - 1)) * 100) : 0}
+          onTap={() => setSheetPosition('expanded')}
+        />
+      )}
+
+      {/* Mobile: draggable bottom sheet */}
+      {isMobile && (
+        <MobileBottomSheet
+          position={sheetPosition}
+          onPositionChange={setSheetPosition}
+        >
+          <div className="sidebar mobile-sheet-sidebar">
+            {sidebarContent}
+          </div>
+        </MobileBottomSheet>
+      )}
     </div>
   );
 }
