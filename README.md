@@ -2,7 +2,7 @@
 
 **Find safer routes through Chicago — because Google Maps won't tell you which streets to avoid at 2 AM.**
 
-[Live Demo](https://safepath.onrender.com) | [Demo Video](#)
+[Live Demo](https://safepath-calh.onrender.com/) | [Demo Video](#)
 
 ---
 
