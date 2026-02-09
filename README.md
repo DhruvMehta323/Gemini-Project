@@ -65,41 +65,64 @@ Every route request goes through Gemini 3 Flash to extract structured data from 
 The AI buddy isn't just answering questions — it maintains conversation history, knows your current navigation state (position, next turn, distance remaining), integrates live weather context, and generates route summaries that mention actual Chicago streets and neighborhoods. During active navigation, it handles context-aware queries like "how much longer?" or "is this area safe?" using your real-time position.
 
 **3. Gemini 2.5 Flash TTS — Voice Navigation**
-Full voice call mode with natural speech output. We run a two-tier alert system: Gemini TTS for advance turn warnings (20 seconds ahead, natural voice), and browser SpeechSynthesis for urgent alerts (10 seconds ahead, instant playback). The AI generates turn instructions that sound conversational — "slight left coming up on Michigan Ave" instead of "in 200 feet, turn left."
+Full voice call mode with natural speech output using the "Kore" voice. We run a two-tier alert system: Gemini TTS for advance turn warnings (20 seconds ahead, natural voice), and browser SpeechSynthesis for urgent alerts (10 seconds ahead, instant playback). The AI generates turn instructions that sound conversational — "slight left coming up on Michigan Ave" instead of "in 200 feet, turn left." *(Gemini 3 doesn't have TTS capability yet, so we use 2.5 Flash TTS for audio generation while all intelligence runs on Gemini 3.)*
 
-All three run concurrently using `ThreadPoolExecutor` — route parsing and speculative chat happen in parallel so responses feel instant.
+All three run concurrently using `ThreadPoolExecutor` — route parsing and speculative chat happen in parallel so responses feel instant. The core application logic — everything that reasons, understands, and decides — runs on **Gemini 3 Flash**.
 
 ---
 
 ## Architecture
 
-```
-┌──────────────────────────────────────────────────────┐
-│  User (Browser / Mobile)                             │
-│  React 19 + Mapbox GL JS + Web Speech API            │
-└──────────────┬──────────────────────┬────────────────┘
-               │ Voice/Text           │ Map + Nav
-               ▼                      ▼
-┌──────────────────────────────────────────────────────┐
-│  Flask API (/api)                                    │
-│                                                      │
-│  ┌─────────────┐  ┌──────────────┐  ┌─────────────┐ │
-│  │ Gemini 3    │  │ Routing      │  │ Weather     │ │
-│  │ Flash       │  │ Engine       │  │ Service     │ │
-│  │             │  │              │  │             │ │
-│  │ • Parse     │  │ • NetworkX   │  │ • Open-Meteo│ │
-│  │ • Chat      │  │ • OSMnx     │  │ • Risk mult │ │
-│  │ • TTS       │  │ • H3 grid   │  │             │ │
-│  └─────────────┘  └──────────────┘  └─────────────┘ │
-│                          │                           │
-│                   ┌──────┴──────┐                    │
-│                   │ Risk Data   │                    │
-│                   │ 49,505 crash│                    │
-│                   │ + crime     │                    │
-│                   │ + time mods │                    │
-│                   │ 4,824 cells │                    │
-│                   └─────────────┘                    │
-└──────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph CLIENT["Browser / Mobile"]
+        UI["React 19 + Mapbox GL JS"]
+        VOICE["Web Speech API\n(STT + instant TTS)"]
+        NAV["Live Navigation\nCamera follow + bearing"]
+    end
+
+    subgraph API["Flask Backend"]
+        direction TB
+        subgraph GEMINI["Gemini 3 Flash"]
+            PARSE["Route Parser\nNatural language → JSON"]
+            CHAT["AI Buddy\nConversation + memory"]
+            SUMMARY["Route Summary\nSafety briefing"]
+        end
+        TTS["Gemini 2.5 Flash TTS\nNatural voice output"]
+        subgraph ENGINE["Routing Engine"]
+            NX["NetworkX\nGraph-based pathfinding"]
+            H3["H3 Hex Grid\n4,824 cells · res 9"]
+            RISK["Risk Scorer\nCrash + Crime + Time + Weather"]
+        end
+        WEATHER["Weather Service\nOpen-Meteo API"]
+    end
+
+    subgraph DATA["Chicago Risk Data"]
+        CRASH["49,505 Crashes\nSeverity-weighted"]
+        CRIME["Crime Reports\nType-weighted"]
+        TIME["Time Patterns\nHourly multipliers"]
+    end
+
+    UI -- "text / voice" --> PARSE
+    UI -- "chat" --> CHAT
+    PARSE -- "structured params" --> NX
+    NX -- "fastest + safest routes" --> SUMMARY
+    SUMMARY -- "route briefing" --> UI
+    CHAT -- "conversation" --> UI
+    TTS -- "audio stream" --> UI
+    WEATHER -- "risk multipliers" --> RISK
+    RISK --> NX
+    H3 --> RISK
+    CRASH --> H3
+    CRIME --> H3
+    TIME --> RISK
+    NAV -- "position updates" --> CHAT
+
+    style GEMINI fill:#4285F4,color:#fff,stroke:#1a73e8
+    style TTS fill:#4285F4,color:#fff,stroke:#1a73e8
+    style ENGINE fill:#34A853,color:#fff,stroke:#1e8e3e
+    style DATA fill:#FBBC04,color:#000,stroke:#f9a825
+    style CLIENT fill:#EA4335,color:#fff,stroke:#d93025
 ```
 
 ---
