@@ -1,26 +1,30 @@
-from flask import Flask, request, jsonify
+from flask import Flask, Blueprint, request, jsonify, Response, send_from_directory
 from routing_engine import RoutingEngine
 from gemini_service import GeminiService
+from weather_service import WeatherService
 from flask_cors import CORS
 from dotenv import load_dotenv
 import json
 import copy
 import os
-import osmnx as ox
+import base64
+import requests as http_requests
+from concurrent.futures import ThreadPoolExecutor
 
 load_dotenv()
 
 app = Flask(__name__)
 CORS(app)
+api = Blueprint('api', __name__)
 
-# Init Engine (Manhattan - full NYC graph too large for memory)
-engine = RoutingEngine("Manhattan, New York, USA")
-engine.load_risk_api("../output/routing_risk_api.json")
+# Init Engine (Chicago)
+engine = RoutingEngine("Chicago, Illinois, USA")
+engine.load_risk_api("../output_chicago/routing_risk_api.json")
 
 # Load static data for dynamic heatmap
-with open("../output/grid_risk.geojson", 'r') as f:
+with open("../output_chicago/grid_risk.geojson", 'r') as f:
     base_heatmap = json.load(f)
-with open("../output/time_patterns.json", 'r') as f:
+with open("../output_chicago/time_patterns.json", 'r') as f:
     time_patterns = json.load(f)
 
 # Create hourly multiplier lookup
@@ -34,17 +38,44 @@ if os.environ.get('GEMINI_API_KEY'):
 else:
     print("WARNING: GEMINI_API_KEY not set. /chat endpoint will not work.")
 
-# Geocoding cache
+# Init Weather service (Chicago coordinates)
+weather_svc = WeatherService(lat=41.8781, lng=-87.6298)
+print(f"Weather: {weather_svc.get_weather()['current']['description']}")
+
+# Phrases that mean "use my GPS location"
+MY_LOCATION_PHRASES = {
+    'my location', 'my current location', 'current location',
+    'here', 'where i am', 'my position', 'my place',
+}
+
+# Mapbox geocoding (replaces slow osmnx — ~200ms vs 3-5s)
+MAPBOX_TOKEN = os.environ.get('MAPBOX_TOKEN', '')
 _geocode_cache = {}
 
-def geocode_place(place_name):
-    """Convert a place name to [lat, lng] within Manhattan context."""
+def geocode_place(place_name, user_coords=None):
+    """Convert a place name to [lat, lng] using Mapbox Geocoding API."""
     normalized = place_name.strip().lower()
     if normalized in _geocode_cache:
         return _geocode_cache[normalized]
-    query = f"{place_name}, Manhattan, New York, NY"
-    result = ox.geocode(query)
-    coords = [result[0], result[1]]
+    query = f"{place_name}, Chicago, Illinois"
+    url = f"https://api.mapbox.com/geocoding/v5/mapbox.places/{http_requests.utils.quote(query)}.json"
+    # Use user's location for proximity bias (avoids defaulting to the Loop)
+    if user_coords and len(user_coords) == 2:
+        proximity = f'{user_coords[1]},{user_coords[0]}'
+    else:
+        proximity = '-87.6298,41.8781'
+    resp = http_requests.get(url, params={
+        'access_token': MAPBOX_TOKEN,
+        'proximity': proximity,
+        'bbox': '-87.94,41.644,-87.524,42.023',
+        'limit': 1,
+    }, timeout=5)
+    resp.raise_for_status()
+    features = resp.json().get('features', [])
+    if not features:
+        raise ValueError(f"Could not find: {place_name}")
+    lng, lat = features[0]['geometry']['coordinates']
+    coords = [lat, lng]
     _geocode_cache[normalized] = coords
     return coords
 
@@ -54,7 +85,7 @@ def get_time_label(h):
     if h < 12: return f"{h} AM"
     return f"{h - 12} PM"
 
-@app.route('/get-route', methods=['POST'])
+@api.route('/get-route', methods=['POST'])
 def get_route():
     req = request.json
     # Expects: {"start": [lat, lng], "end": [lat, lng], "beta": 0.5, "hour": 17}
@@ -72,7 +103,7 @@ def get_route():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 400
 
-@app.route('/compare-routes', methods=['POST'])
+@api.route('/compare-routes', methods=['POST'])
 def compare_routes():
     req = request.json
     try:
@@ -88,30 +119,42 @@ def compare_routes():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 400
 
-@app.route('/heatmap/<int:hour>', methods=['GET'])
+@api.route('/weather', methods=['GET'])
+def get_weather():
+    """Returns current weather conditions and hourly forecast."""
+    try:
+        data = weather_svc.get_weather()
+        return jsonify({"status": "success", "data": data})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 400
+
+@api.route('/heatmap/<int:hour>', methods=['GET'])
 def get_heatmap(hour):
-    """Returns risk heatmap GeoJSON adjusted for the specified hour"""
+    """Returns risk heatmap GeoJSON adjusted for time + weather"""
     try:
         hour = max(0, min(23, hour))  # Clamp to valid range
-        multiplier = hourly_multipliers.get(hour, 1.0)
+        time_mult = hourly_multipliers.get(hour, 1.0)
+        weather_mult = weather_svc.get_risk_multiplier(hour)
 
         # Create adjusted copy of heatmap
         adjusted = copy.deepcopy(base_heatmap)
         for feature in adjusted['features']:
             base_risk = feature['properties'].get('risk_score', 0)
-            # Apply time multiplier and normalize
-            adjusted_risk = base_risk * multiplier
+            # Apply time + weather multipliers and normalize
+            adjusted_risk = base_risk * time_mult * weather_mult
             feature['properties']['risk_score'] = min(100, adjusted_risk)
             feature['properties']['hour'] = hour
-            feature['properties']['multiplier'] = multiplier
+            feature['properties']['time_multiplier'] = time_mult
+            feature['properties']['weather_multiplier'] = weather_mult
 
         return jsonify(adjusted)
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 400
 
-@app.route('/chat', methods=['POST'])
+@api.route('/chat', methods=['POST'])
 def chat():
-    """AI-powered natural language routing with safety briefing."""
+    """AI-powered natural language routing with safety briefing.
+    Optimized: parallel parse+chat, inline TTS audio for voice mode."""
     if not gemini_svc:
         return jsonify({
             "status": "error",
@@ -127,36 +170,130 @@ def chat():
             "message": "Please type a message describing where you want to go."
         })
 
-    # Step 1: Parse intent with Gemini
     user_hour = request.json.get('user_hour', None)
-    parsed = gemini_svc.parse_route_request(user_message, user_hour=user_hour)
+    nav_state = request.json.get('nav_state', None)
+    user_coords = request.json.get('user_coords', None)
+    voice = request.json.get('voice', False)  # If true, include TTS audio in response
 
-    if not parsed or not parsed.get('start_name') or not parsed.get('end_name'):
-        return jsonify({
-            "status": "error",
-            "error_type": "parse_failed",
-            "message": gemini_svc.get_fallback_message(user_message),
-            "parsed": None
-        })
+    # Weather context (cached, instant)
+    weather_ctx = weather_svc.get_context_string()
 
-    # Step 2: Geocode place names
-    try:
-        start_coords = geocode_place(parsed['start_name'])
-    except Exception:
+    # Check for travel mode selection (from frontend travel mode buttons/voice)
+    pending_parsed = request.json.get('pending_parsed', None)
+    selected_travel_mode = request.json.get('selected_travel_mode', None)
+
+    if pending_parsed and selected_travel_mode:
+        # User selected travel mode — use pending parsed data with chosen mode
+        parsed = pending_parsed
+        parsed['travel_mode'] = selected_travel_mode
+    else:
+        # OPTIMIZATION: Run parse + speculative chat reply IN PARALLEL
+        pool = ThreadPoolExecutor(max_workers=2)
+        parse_f = pool.submit(gemini_svc.parse_route_request, user_message, user_hour=user_hour)
+        chat_f = pool.submit(
+            gemini_svc.chat_reply, user_message,
+            nav_state=nav_state, weather_context=weather_ctx,
+            update_history=False  # Don't commit yet — speculative
+        )
+        parsed = parse_f.result()
+
+        if not parsed or not parsed.get('start_name') or not parsed.get('end_name'):
+            # Not a route — use the pre-computed speculative chat reply
+            reply = chat_f.result()
+            pool.shutdown(wait=False)
+            gemini_svc.commit_pending_exchange()  # Now commit to history
+
+            result = {"status": "chat", "message": reply, "parsed": None}
+
+            if voice:
+                audio_data, mime_type = gemini_svc.text_to_speech(reply)
+                if audio_data:
+                    result['audio'] = base64.b64encode(audio_data).decode('utf-8')
+                    result['audio_mime'] = mime_type
+
+            return jsonify(result)
+
+        # It IS a route — discard speculative chat without blocking
+        pool.shutdown(wait=False)
+
+        # Check if user specified travel mode explicitly
+        if not parsed.get('travel_mode_explicit', True):
+            buddy_msg = gemini_svc.chat_reply(
+                user_message,
+                weather_context=f"The user wants to go from {parsed['start_name']} to {parsed['end_name']} but didn't say how they're traveling. Ask them casually if they're walking, driving, or biking. One short sentence max, keep it natural like a friend would ask.",
+            )
+            result = {
+                "status": "need_travel_mode",
+                "message": buddy_msg,
+                "pending_parsed": parsed
+            }
+            if voice:
+                audio_data, mime_type = gemini_svc.text_to_speech(buddy_msg)
+                if audio_data:
+                    result['audio'] = base64.b64encode(audio_data).decode('utf-8')
+                    result['audio_mime'] = mime_type
+            return jsonify(result)
+
+    # Step 2: Geocode place names (with "my location" support + parallel geocoding)
+    start_is_here = parsed.get('start_name', '').lower().strip() in MY_LOCATION_PHRASES
+    end_is_here = parsed.get('end_name', '').lower().strip() in MY_LOCATION_PHRASES
+
+    start_coords = end_coords = None
+    start_error = end_error = None
+
+    if start_is_here:
+        if user_coords and len(user_coords) == 2:
+            start_coords = user_coords
+            parsed['start_name'] = 'your current location'
+        else:
+            return jsonify({
+                "status": "error",
+                "error_type": "no_location",
+                "message": "I need your location to route from here. Make sure location access is enabled in your browser.",
+                "parsed": parsed
+            })
+
+    if end_is_here:
+        if user_coords and len(user_coords) == 2:
+            end_coords = user_coords
+            parsed['end_name'] = 'your current location'
+        else:
+            return jsonify({
+                "status": "error",
+                "error_type": "no_location",
+                "message": "I need your location. Make sure location access is enabled in your browser.",
+                "parsed": parsed
+            })
+
+    # OPTIMIZATION: geocode both locations in parallel (saves 3-5s on first lookup)
+    if not start_coords or not end_coords:
+        with ThreadPoolExecutor(max_workers=2) as geo_pool:
+            start_f = geo_pool.submit(geocode_place, parsed['start_name'], user_coords) if not start_coords else None
+            end_f = geo_pool.submit(geocode_place, parsed['end_name'], user_coords) if not end_coords else None
+
+            if start_f:
+                try:
+                    start_coords = start_f.result()
+                except Exception:
+                    start_error = parsed['start_name']
+            if end_f:
+                try:
+                    end_coords = end_f.result()
+                except Exception:
+                    end_error = parsed['end_name']
+
+    if start_error:
         return jsonify({
             "status": "error",
             "error_type": "geocode_failed",
-            "message": f"I couldn't find '{parsed['start_name']}' in Manhattan. Could you try a different landmark or address?",
+            "message": f"I couldn't find '{start_error}' in Chicago. Could you try a different landmark or address?",
             "parsed": parsed
         })
-
-    try:
-        end_coords = geocode_place(parsed['end_name'])
-    except Exception:
+    if end_error:
         return jsonify({
             "status": "error",
             "error_type": "geocode_failed",
-            "message": f"I couldn't find '{parsed['end_name']}' in Manhattan. Could you try a different landmark or address?",
+            "message": f"I couldn't find '{end_error}' in Chicago. Could you try a different landmark or address?",
             "parsed": parsed
         })
 
@@ -165,7 +302,7 @@ def chat():
         return jsonify({
             "status": "error",
             "error_type": "out_of_bounds",
-            "message": f"'{parsed['start_name']}' is outside our Manhattan coverage area. Try a Manhattan landmark instead.",
+            "message": f"'{parsed['start_name']}' is outside our Chicago coverage area. Try a Chicago landmark instead.",
             "parsed": {**parsed, "start_coords": start_coords, "end_coords": end_coords}
         })
 
@@ -173,7 +310,7 @@ def chat():
         return jsonify({
             "status": "error",
             "error_type": "out_of_bounds",
-            "message": f"'{parsed['end_name']}' is outside our Manhattan coverage area. Try a Manhattan landmark instead.",
+            "message": f"'{parsed['end_name']}' is outside our Chicago coverage area. Try a Chicago landmark instead.",
             "parsed": {**parsed, "start_coords": start_coords, "end_coords": end_coords}
         })
 
@@ -195,24 +332,71 @@ def chat():
             "parsed": {**parsed, "start_coords": start_coords, "end_coords": end_coords}
         })
 
-    # Step 5: Generate safety briefing with Gemini
-    multiplier = hourly_multipliers.get(parsed.get('hour', 12), 1.0)
-    briefing = gemini_svc.generate_safety_briefing(
+    # Step 5: Get weather context for this route
+    route_hour = parsed.get('hour', 12)
+    multiplier = hourly_multipliers.get(route_hour, 1.0)
+    weather_context = weather_svc.get_context_string(hour=route_hour)
+    weather_data = weather_svc.get_weather()
+
+    # Step 6: Generate buddy summary + safety briefing in PARALLEL
+    gen_kwargs = dict(
         parsed=parsed,
         metrics=comparison['metrics'],
         hourly_multiplier=multiplier,
         fastest_coords=comparison.get('fastest_route'),
-        safest_coords=comparison.get('safest_route')
+        safest_coords=comparison.get('safest_route'),
+        weather_context=weather_context
     )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        summary_f = pool.submit(gemini_svc.generate_route_summary, **gen_kwargs)
+        briefing_f = pool.submit(gemini_svc.generate_safety_briefing, **gen_kwargs)
+        buddy_summary = summary_f.result()
+        briefing = briefing_f.result()
+
+    # NOTE: TTS for route summaries is handled by the frontend via /tts endpoint.
+    # Including it inline would add 3 simultaneous Gemini calls which hits rate limits.
 
     return jsonify({
         "status": "success",
         "parsed": {**parsed, "start_coords": start_coords, "end_coords": end_coords},
         "route_data": comparison,
         "safety_briefing": briefing,
-        "ai_summary": f"Found routes from {parsed['start_name']} to {parsed['end_name']} for {get_time_label(parsed.get('hour', 12))}."
+        "ai_summary": buddy_summary,
+        "weather": weather_data["current"]
     })
 
 
+@api.route('/tts', methods=['POST'])
+def tts():
+    """Convert text to natural speech using Gemini's voice."""
+    if not gemini_svc:
+        return jsonify({"error": "Gemini not configured"}), 400
+
+    text = request.json.get('text', '')
+    if not text.strip():
+        return jsonify({"error": "No text provided"}), 400
+
+    audio_data, mime_type = gemini_svc.text_to_speech(text)
+    if audio_data:
+        return Response(audio_data, mimetype=mime_type)
+    return jsonify({"error": "TTS generation failed"}), 500
+
+
+# Register API routes under /api prefix
+app.register_blueprint(api, url_prefix='/api')
+
+# Serve React frontend in production (built files in ../frontend/dist)
+FRONTEND_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'frontend', 'dist')
+
+if os.path.exists(FRONTEND_DIR):
+    @app.route('/', defaults={'path': ''})
+    @app.route('/<path:path>')
+    def serve_frontend(path):
+        file_path = os.path.join(FRONTEND_DIR, path)
+        if path and os.path.isfile(file_path):
+            return send_from_directory(FRONTEND_DIR, path)
+        return send_from_directory(FRONTEND_DIR, 'index.html')
+
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    app.run(debug=True, port=5001)

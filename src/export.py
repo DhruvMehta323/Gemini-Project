@@ -148,19 +148,15 @@ class RiskExporter:
 
         # Create fast lookup for cell-time combinations
         if cell_time_df is not None:
-            for _, row in cell_time_df.iterrows():
-                cell = row["h3_cell"]
-                period = row["time_period"]
-                day_type = row["day_type"]
-
-                if cell not in output_data["cell_time_lookup"]:
-                    output_data["cell_time_lookup"][cell] = {}
-
-                key = f"{period}_{day_type}"
-                output_data["cell_time_lookup"][cell][key] = {
-                    "crash_count": int(row["crash_count"]),
-                    "time_risk_score": float(row["time_risk_score"]),
-                    "global_risk_score": float(row["global_risk_score"])
+            lookup = output_data["cell_time_lookup"]
+            for cell, group in cell_time_df.groupby("h3_cell"):
+                lookup[cell] = {
+                    f"{r['time_period']}_{r['day_type']}": {
+                        "crash_count": int(r["crash_count"]),
+                        "time_risk_score": float(r["time_risk_score"]),
+                        "global_risk_score": float(r["global_risk_score"])
+                    }
+                    for r in group.to_dict("records")
                 }
 
         with open(output_path, "w") as f:
@@ -196,49 +192,46 @@ class RiskExporter:
         """
         output_path = self.output_dir / filename
 
+        # Build cells dict from grid in batch (avoid iterrows)
+        grid_records = grid_df.to_dict("records")
         cells = {}
-
-        # Base risk from grid (may include crime_risk if blended)
-        for _, row in grid_df.iterrows():
-            cell_id = row["h3_cell"]
-            cells[cell_id] = {
-                "base_risk": float(row["risk_score"]),
-                "smoothed_risk": float(row.get("smoothed_risk", row["risk_score"])),
-                "pedestrian_risk": float(row.get("pedestrian_risk", 0)),
-                "cyclist_risk": float(row.get("cyclist_risk", 0)),
-                "crime_risk": float(row.get("crime_risk", 0)),
-                "smoothed_crime_risk": float(row.get("smoothed_crime_risk", 0)),
-                "crash_count": int(row.get("crash_count", 0)),
-                "crime_count": int(row.get("crime_count", 0)),
-                "total_severity": float(row.get("crash_severity", row.get("total_severity", 0))),
+        for r in grid_records:
+            severity = r.get("crash_severity", r.get("total_severity", 0))
+            cells[r["h3_cell"]] = {
+                "base_risk": float(r.get("risk_score", 0)),
+                "smoothed_risk": float(r.get("smoothed_risk", r.get("risk_score", 0))),
+                "pedestrian_risk": float(r.get("pedestrian_risk", 0)),
+                "cyclist_risk": float(r.get("cyclist_risk", 0)),
+                "crime_risk": float(r.get("crime_risk", 0)),
+                "smoothed_crime_risk": float(r.get("smoothed_crime_risk", 0)),
+                "crash_count": int(r.get("crash_count", 0)),
+                "crime_count": int(r.get("crime_count", 0)),
+                "total_severity": float(severity),
                 "time_modifiers": {},
                 "crime_time_modifiers": {}
             }
 
-        # Add crash time modifiers
+        # Add crash time modifiers in batch
         if time_df is not None:
-            for _, row in time_df.iterrows():
-                cell_id = row["h3_cell"]
-                if cell_id in cells:
-                    key = f"{row['time_period']}_{row['day_type']}"
-                    base = cells[cell_id]["base_risk"]
-                    if base > 0:
-                        modifier = row["global_risk_score"] / base
-                    else:
-                        modifier = 1.0
+            for cell_id, group in time_df.groupby("h3_cell"):
+                if cell_id not in cells:
+                    continue
+                base = cells[cell_id]["base_risk"]
+                for r in group.to_dict("records"):
+                    key = f"{r['time_period']}_{r['day_type']}"
+                    modifier = (r["global_risk_score"] / base) if base > 0 else 1.0
                     cells[cell_id]["time_modifiers"][key] = round(modifier, 3)
 
-        # Add crime time modifiers
+        # Add crime time modifiers in batch
         if combined_time_df is not None:
-            for _, row in combined_time_df.iterrows():
-                cell_id = row["h3_cell"]
-                if cell_id in cells:
-                    key = f"{row['time_period']}_{row['day_type']}"
-                    crime_base = cells[cell_id]["crime_risk"]
-                    if crime_base > 0:
-                        modifier = row.get("crime_time_score", 0) / crime_base
-                    else:
-                        modifier = 1.0
+            for cell_id, group in combined_time_df.groupby("h3_cell"):
+                if cell_id not in cells:
+                    continue
+                crime_base = cells[cell_id]["crime_risk"]
+                for r in group.to_dict("records"):
+                    key = f"{r['time_period']}_{r['day_type']}"
+                    score = r.get("crime_time_score", 0)
+                    modifier = (score / crime_base) if crime_base > 0 else 1.0
                     cells[cell_id]["crime_time_modifiers"][key] = round(modifier, 3)
 
         output_data = {

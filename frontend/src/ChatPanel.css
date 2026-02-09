@@ -132,6 +132,50 @@
   color: #fb923c;
 }
 
+/* Travel mode selector */
+.travel-mode-selector {
+  padding: 10px 0;
+}
+
+.travel-mode-label {
+  font-size: 11px;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+
+.travel-mode-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+}
+
+.travel-mode-btn {
+  padding: 12px 8px;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 10px;
+  background: rgba(255,255,255,0.04);
+  color: #cbd5e1;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: inherit;
+  text-align: center;
+}
+
+.travel-mode-btn:hover {
+  background: rgba(59, 130, 246, 0.15);
+  border-color: rgba(59, 130, 246, 0.4);
+  color: #60a5fa;
+  transform: translateY(-1px);
+}
+
+.travel-mode-btn:active {
+  transform: translateY(0);
+}
+
 /* Chat navigate buttons */
 .chat-nav-buttons {
   display: grid;
@@ -175,8 +219,9 @@
   align-items: center;
   justify-content: center;
   flex: 1;
-  gap: 20px;
+  gap: 16px;
   padding: 20px 0;
+  background: radial-gradient(ellipse at center, rgba(16, 185, 129, 0.03) 0%, transparent 70%);
 }
 
 .call-header {
@@ -189,7 +234,18 @@
 .call-label {
   font-size: 18px;
   font-weight: 700;
-  color: white;
+  background: linear-gradient(135deg, #ffffff, #34d399);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.call-sublabel {
+  font-size: 11px;
+  color: #a78bfa;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
 }
 
 .call-timer {
@@ -201,39 +257,40 @@
 /* Animated orb */
 .call-orb {
   position: relative;
-  width: 120px;
-  height: 120px;
+  width: 140px;
+  height: 140px;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 .call-orb-inner {
-  width: 80px;
-  height: 80px;
+  width: 90px;
+  height: 90px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 32px;
+  font-size: 36px;
   z-index: 2;
   position: relative;
-  transition: background 0.3s, box-shadow 0.3s;
+  transition: background 0.4s, box-shadow 0.4s;
+  backdrop-filter: blur(10px);
 }
 
 .call-orb.listening .call-orb-inner {
-  background: rgba(239, 68, 68, 0.2);
-  box-shadow: 0 0 30px rgba(239, 68, 68, 0.3);
+  background: rgba(239, 68, 68, 0.15);
+  box-shadow: 0 0 40px rgba(239, 68, 68, 0.4), inset 0 0 20px rgba(239, 68, 68, 0.1);
 }
 
 .call-orb.processing .call-orb-inner {
-  background: rgba(59, 130, 246, 0.2);
-  box-shadow: 0 0 30px rgba(59, 130, 246, 0.3);
+  background: rgba(139, 92, 246, 0.15);
+  box-shadow: 0 0 40px rgba(139, 92, 246, 0.4), inset 0 0 20px rgba(139, 92, 246, 0.1);
 }
 
 .call-orb.speaking .call-orb-inner {
-  background: rgba(16, 185, 129, 0.2);
-  box-shadow: 0 0 30px rgba(16, 185, 129, 0.3);
+  background: rgba(16, 185, 129, 0.15);
+  box-shadow: 0 0 40px rgba(16, 185, 129, 0.4), inset 0 0 20px rgba(16, 185, 129, 0.1);
 }
 
 .call-orb.idle .call-orb-inner {
@@ -252,13 +309,13 @@
   animation: call-ripple 2s infinite ease-out;
 }
 
-.call-ring.ring-1 { width: 90px; height: 90px; animation-delay: 0s; }
-.call-ring.ring-2 { width: 105px; height: 105px; animation-delay: 0.4s; }
-.call-ring.ring-3 { width: 120px; height: 120px; animation-delay: 0.8s; }
+.call-ring.ring-1 { width: 100px; height: 100px; animation-delay: 0s; }
+.call-ring.ring-2 { width: 118px; height: 118px; animation-delay: 0.4s; }
+.call-ring.ring-3 { width: 136px; height: 136px; animation-delay: 0.8s; }
 
-.call-orb.listening .call-ring { border-color: rgba(239, 68, 68, 0.3); }
-.call-orb.processing .call-ring { border-color: rgba(59, 130, 246, 0.2); animation: call-spin 1.5s infinite linear; }
-.call-orb.speaking .call-ring { border-color: rgba(16, 185, 129, 0.3); }
+.call-orb.listening .call-ring { border-color: rgba(239, 68, 68, 0.35); }
+.call-orb.processing .call-ring { border-color: rgba(139, 92, 246, 0.25); animation: call-spin 1.5s infinite linear; }
+.call-orb.speaking .call-ring { border-color: rgba(16, 185, 129, 0.35); animation: call-breathe 1.5s infinite ease-in-out; }
 .call-orb.idle .call-ring { border-color: rgba(255, 255, 255, 0.05); }
 
 @keyframes call-ripple {
@@ -271,17 +328,46 @@
   100% { transform: translate(-50%, -50%) rotate(360deg); }
 }
 
+@keyframes call-breathe {
+  0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.5; }
+  50% { transform: translate(-50%, -50%) scale(1.08); opacity: 1; }
+}
+
 /* State label */
 .call-state-label {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 1px;
+  letter-spacing: 1.5px;
+  transition: color 0.3s;
 }
 
 .call-orb.listening ~ .call-state-label { color: #f87171; }
-.call-orb.processing ~ .call-state-label { color: #60a5fa; }
+.call-orb.processing ~ .call-state-label { color: #a78bfa; }
 .call-orb.speaking ~ .call-state-label { color: #34d399; }
+
+/* Interrupt hint */
+.call-interrupt-hint {
+  font-size: 11px;
+  color: #64748b;
+  letter-spacing: 0.5px;
+  margin-top: -8px;
+  animation: fade-pulse 2s infinite ease-in-out;
+}
+
+@keyframes fade-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+.call-orb.speaking {
+  cursor: pointer;
+}
+
+.call-orb.speaking:hover .call-orb-inner {
+  box-shadow: 0 0 50px rgba(16, 185, 129, 0.6), inset 0 0 25px rgba(16, 185, 129, 0.15);
+  transform: scale(1.05);
+}
 
 /* Live transcript */
 .call-transcript {
@@ -324,20 +410,21 @@
   padding: 14px 32px;
   border: none;
   border-radius: 40px;
-  background: #ef4444;
+  background: linear-gradient(135deg, #ef4444, #dc2626);
   color: white;
   font-size: 15px;
   font-weight: 700;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.3s;
   font-family: inherit;
   margin-top: 10px;
+  box-shadow: 0 4px 15px rgba(239, 68, 68, 0.2);
 }
 
 .call-end-btn:hover {
-  background: #dc2626;
+  background: linear-gradient(135deg, #dc2626, #b91c1c);
   transform: scale(1.05);
-  box-shadow: 0 4px 20px rgba(239, 68, 68, 0.4);
+  box-shadow: 0 6px 25px rgba(239, 68, 68, 0.5);
 }
 
 .call-end-icon {
@@ -348,55 +435,66 @@
 
 /* Call button in input bar */
 .voice-call-btn {
-  width: 44px;
-  height: 44px;
-  border: 1px solid rgba(16, 185, 129, 0.3);
-  border-radius: 10px;
-  background: rgba(16, 185, 129, 0.1);
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.25), rgba(139, 92, 246, 0.25));
   font-size: 18px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.3s;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  animation: btn-glow 3s infinite ease-in-out;
+}
+
+@keyframes btn-glow {
+  0%, 100% { box-shadow: 0 0 5px rgba(16, 185, 129, 0.1); }
+  50% { box-shadow: 0 0 15px rgba(16, 185, 129, 0.25); }
 }
 
 .voice-call-btn:hover:not(:disabled) {
-  background: rgba(16, 185, 129, 0.2);
-  border-color: rgba(16, 185, 129, 0.5);
-  box-shadow: 0 0 12px rgba(16, 185, 129, 0.2);
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.35), rgba(139, 92, 246, 0.35));
+  box-shadow: 0 0 20px rgba(16, 185, 129, 0.3);
+  transform: scale(1.08);
+  animation: none;
 }
 
 .voice-call-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+  animation: none;
 }
 
-/* Chat input bar */
+/* Chat input bar — glass container */
 .chat-input-bar {
   display: flex;
+  align-items: center;
   gap: 8px;
-  padding-top: 12px;
-  border-top: 1px solid rgba(255,255,255,0.1);
+  padding: 8px 10px;
   margin-top: 8px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 16px;
+  backdrop-filter: blur(10px);
+  transition: border-color 0.3s;
+}
+
+.chat-input-bar:focus-within {
+  border-color: rgba(59, 130, 246, 0.3);
 }
 
 .chat-input-bar input {
   flex: 1;
-  background: rgba(255,255,255,0.05);
-  border: 1px solid rgba(255,255,255,0.15);
-  border-radius: 10px;
-  padding: 12px 14px;
+  background: transparent;
+  border: none;
+  padding: 8px 4px;
   color: white;
   font-size: 14px;
   outline: none;
   font-family: inherit;
-  transition: border-color 0.2s;
-}
-
-.chat-input-bar input:focus {
-  border-color: #3b82f6;
 }
 
 .chat-input-bar input::placeholder {
@@ -408,26 +506,28 @@
 }
 
 .chat-send-btn {
+  width: 40px;
+  height: 40px;
   background: linear-gradient(135deg, #10b981, #3b82f6);
   border: none;
-  border-radius: 10px;
-  padding: 12px 18px;
+  border-radius: 12px;
   color: white;
-  font-weight: 600;
-  font-size: 14px;
   cursor: pointer;
   transition: all 0.2s;
-  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
 .chat-send-btn:hover:not(:disabled) {
-  transform: translateY(-1px);
+  transform: scale(1.05);
   box-shadow: 0 4px 15px rgba(16, 185, 129, 0.3);
 }
 
 .chat-send-btn:disabled {
-  background: #334155;
-  color: #64748b;
+  background: rgba(255,255,255,0.05);
+  color: #334155;
   cursor: not-allowed;
 }
 
@@ -483,10 +583,12 @@
 .tab-btn.active {
   background: rgba(59, 130, 246, 0.2);
   color: #60a5fa;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.15);
 }
 
 .tab-btn:hover:not(.active) {
   color: #94a3b8;
+  background: rgba(255,255,255,0.03);
 }
 
 /* Chat examples hint */
@@ -530,4 +632,73 @@
   background: rgba(59, 130, 246, 0.15);
   border-color: rgba(59, 130, 246, 0.3);
   color: #cbd5e1;
+}
+
+/* ===== Mobile Responsive ===== */
+@media (max-width: 768px) {
+  .chat-panel {
+    height: 100%;
+    max-height: none;
+  }
+
+  .chat-messages {
+    max-height: none;
+    flex: 1;
+    min-height: 0;
+  }
+
+  .chat-input-bar {
+    padding: 8px 0;
+  }
+
+  .chat-input-bar input {
+    font-size: 16px; /* prevents iOS zoom on focus */
+    padding: 12px 14px;
+  }
+
+  .chat-send-btn {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+  }
+
+  .voice-call-btn {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    font-size: 20px;
+  }
+
+  .chat-msg {
+    font-size: 14px;
+  }
+
+  .chat-nav-btn {
+    padding: 14px 8px;
+    font-size: 14px;
+  }
+
+  .travel-mode-btn {
+    padding: 14px 8px;
+    font-size: 14px;
+  }
+
+  /* Call overlay full screen on mobile */
+  .call-overlay {
+    padding: 24px 16px;
+  }
+
+  .call-orb {
+    width: 120px;
+    height: 120px;
+  }
+
+  .call-orb-inner {
+    font-size: 36px;
+  }
+
+  .call-end-btn {
+    padding: 16px 32px;
+    font-size: 16px;
+  }
 }

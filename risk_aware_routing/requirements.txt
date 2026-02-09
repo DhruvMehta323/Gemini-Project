@@ -1,9 +1,10 @@
 flask
 flask-cors
+gunicorn
 osmnx
 networkx
 pandas
 geopandas
 h3
-google-generativeai
+google-genai
 python-dotenv

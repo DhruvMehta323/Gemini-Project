@@ -69,15 +69,19 @@ class CrimeRiskCalculator:
             cell_stats["crime_risk"] = 0
 
         # Spatial smoothing: blend with neighbors
+        # Build O(1) lookup dict instead of filtering DataFrame per row
         city_avg = cell_stats["crime_risk"].mean()
+        risk_lookup = dict(zip(cell_stats["h3_cell"], cell_stats["crime_risk"]))
 
         def get_smoothed(row):
             cell = row["h3_cell"]
             own_risk = row["crime_risk"]
             neighbors = h3.grid_ring(cell, 1)
-            neighbor_data = cell_stats[cell_stats["h3_cell"].isin(neighbors)]
-            if len(neighbor_data) > 0:
-                neighbor_avg = neighbor_data["crime_risk"].mean()
+            neighbor_scores = [
+                risk_lookup[n] for n in neighbors if n in risk_lookup
+            ]
+            if neighbor_scores:
+                neighbor_avg = sum(neighbor_scores) / len(neighbor_scores)
                 return round(own_risk * 0.7 + neighbor_avg * 0.3, 2)
             return round(own_risk * 0.7 + city_avg * 0.3, 2)
 

@@ -1,21 +1,22 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import Map, { Source, Layer, Marker, NavigationControl } from 'react-map-gl/maplibre';
-import 'maplibre-gl/dist/maplibre-gl.css';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import Map, { Source, Layer, Marker, NavigationControl } from 'react-map-gl/mapbox';
+import 'mapbox-gl/dist/mapbox-gl.css';
+import { getBearing } from './navUtils';
 import ChatPanel from './ChatPanel';
 import NavigationPanel from './NavigationPanel';
 import './App.css';
 
 export default function App() {
-  // Manhattan bounds for reference
-  const MANHATTAN_BOUNDS = {
-    minLat: 40.700, maxLat: 40.880,
-    minLng: -74.020, maxLng: -73.900
+  // Chicago bounds for reference
+  const CHICAGO_BOUNDS = {
+    minLat: 41.644, maxLat: 42.023,
+    minLng: -87.940, maxLng: -87.524
   };
 
   const [viewState, setViewState] = useState({
-    longitude: -73.975,
-    latitude: 40.758,
-    zoom: 13,
+    longitude: -87.6298,
+    latitude: 41.8781,
+    zoom: 12,
     pitch: 40,
     bearing: 0
   });
@@ -30,23 +31,41 @@ export default function App() {
   const [showHeatmap, setShowHeatmap] = useState(true);
   const [activeTab, setActiveTab] = useState('manual');
   const [travelMode, setTravelMode] = useState('walking');
-  const [navRoute, setNavRoute] = useState(null); // which route to navigate (safest_route or fastest_route coords)
+  const [navRoute, setNavRoute] = useState(null);
   const [navTime, setNavTime] = useState(0);
-  const [navPosition, setNavPosition] = useState(null); // live position [lat, lng]
+  const [navPosition, setNavPosition] = useState(null);
   const [showNav, setShowNav] = useState(false);
   const [navInstructions, setNavInstructions] = useState([]);
   const [navCurrentStep, setNavCurrentStep] = useState(0);
   const [isActivelyNavigating, setIsActivelyNavigating] = useState(false);
-  const [navAutoStart, setNavAutoStart] = useState(null); // 'sim' | 'gps' | null
+  const [navAutoStart, setNavAutoStart] = useState(null);
+  const [weather, setWeather] = useState(null);
+  const [userCoords, setUserCoords] = useState(null);
+  const [mobileView, setMobileView] = useState('panel');
+  const [mapLoaded, setMapLoaded] = useState(false);
+  const mapRef = useRef(null);
 
-  const handleChatRoute = (chatRouteData, startCoords, endCoords, chatHour, chatBeta) => {
+  const handleChatRoute = (chatRouteData, startCoords, endCoords, chatHour, chatBeta, chatTravelMode) => {
+    console.log('[handleChatRoute] Received route data:', {
+      hasFastest: !!chatRouteData?.fastest_route,
+      fastestLen: chatRouteData?.fastest_route?.length,
+      hasSafest: !!chatRouteData?.safest_route,
+      safestLen: chatRouteData?.safest_route?.length,
+      startCoords,
+      endCoords,
+      chatHour,
+      chatBeta,
+      chatTravelMode
+    });
     setRouteData(chatRouteData);
     setPoints({ start: startCoords, end: endCoords });
-    setHour(chatHour);
-    setBeta(chatBeta);
+    setHour(chatHour ?? 17);
+    setBeta(chatBeta ?? 5);
+    if (chatTravelMode) setTravelMode(chatTravelMode);
+    if (window.innerWidth <= 768) setMobileView('map');
   };
 
-  const startNavigation = (routeType, autoStart = null) => {
+  const startNavigation = (routeType, autoStart = 'gps') => {
     if (!routeData) return;
     const coords = routeType === 'fastest' ? routeData.fastest_route : routeData.safest_route;
     const time = routeType === 'fastest'
@@ -70,6 +89,7 @@ export default function App() {
     currentPosition: navPosition,
     isNavigating: isActivelyNavigating,
     route: navRoute,
+    travelMode: travelMode,
   };
 
   const closeNavigation = () => {
@@ -80,6 +100,8 @@ export default function App() {
     setNavCurrentStep(0);
     setIsActivelyNavigating(false);
     setNavAutoStart(null);
+    // Reset map to overview (exit navigation view)
+    setViewState(prev => ({ ...prev, zoom: 14, pitch: 40, bearing: 0 }));
   };
 
   // Load risk heatmap data based on selected hour
@@ -89,13 +111,125 @@ export default function App() {
       .then(data => setRiskData(data))
       .catch(err => {
         console.log('Dynamic heatmap failed, trying static:', err);
-        // Fallback to static file
         fetch('/grid_risk.geojson')
           .then(res => res.json())
           .then(data => setRiskData(data))
           .catch(err2 => console.log('Risk data not loaded:', err2));
       });
   }, [hour]);
+
+  // Fetch weather data on load and every 10 minutes
+  useEffect(() => {
+    const fetchWeather = () => {
+      fetch('/api/weather')
+        .then(res => res.json())
+        .then(data => {
+          if (data.status === 'success') setWeather(data.data);
+        })
+        .catch(() => {});
+    };
+    fetchWeather();
+    const interval = setInterval(fetchWeather, 600000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Get user's GPS position
+  useEffect(() => {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => setUserCoords([pos.coords.latitude, pos.coords.longitude]),
+      () => {},
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => setUserCoords([pos.coords.latitude, pos.coords.longitude]),
+      () => {},
+      { enableHighAccuracy: true, maximumAge: 5000 }
+    );
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, []);
+
+  // Route GeoJSON for declarative rendering (survives map re-renders/style changes)
+  const fastestGeoJSON = useMemo(() => {
+    if (!routeData?.fastest_route || routeData.fastest_route.length < 2) return null;
+    return {
+      type: 'Feature',
+      properties: {},
+      geometry: {
+        type: 'LineString',
+        coordinates: routeData.fastest_route.map(p => [Number(p[1]), Number(p[0])])
+      }
+    };
+  }, [routeData]);
+
+  const safestGeoJSON = useMemo(() => {
+    if (!routeData?.safest_route || routeData.safest_route.length < 2) return null;
+    return {
+      type: 'Feature',
+      properties: {},
+      geometry: {
+        type: 'LineString',
+        coordinates: routeData.safest_route.map(p => [Number(p[1]), Number(p[0])])
+      }
+    };
+  }, [routeData]);
+
+  // Fit map to route bounds when route changes
+  useEffect(() => {
+    if (!routeData || !mapRef.current) return;
+    const allCoords = [...(routeData.fastest_route || []), ...(routeData.safest_route || [])];
+    if (allCoords.length < 2) return;
+    const map = mapRef.current.getMap ? mapRef.current.getMap() : mapRef.current;
+    if (!map) return;
+    const lngs = allCoords.map(p => Number(p[1]));
+    const lats = allCoords.map(p => Number(p[0]));
+    try {
+      map.fitBounds(
+        [[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]],
+        { padding: 80, duration: 1000 }
+      );
+    } catch (err) {
+      console.error('[Map] fitBounds error:', err);
+    }
+  }, [routeData]);
+
+  // Google Maps-style camera: follow user, rotate to bearing, zoom to street level
+  const navFollowRef = useRef(0);
+  useEffect(() => {
+    if (!isActivelyNavigating || !navPosition) return;
+
+    // Throttle to ~2fps so map animates smoothly between updates
+    const now = Date.now();
+    if (now - navFollowRef.current < 500) return;
+    navFollowRef.current = now;
+
+    const map = mapRef.current?.getMap ? mapRef.current.getMap() : mapRef.current;
+    if (!map) return;
+
+    // Calculate bearing from closest route segment
+    let bearing = 0;
+    if (navRoute && navRoute.length > 1) {
+      let closestIdx = 0;
+      let closestDist = Infinity;
+      for (let i = 0; i < navRoute.length; i++) {
+        const dlat = navRoute[i][0] - navPosition[0];
+        const dlng = navRoute[i][1] - navPosition[1];
+        const d = dlat * dlat + dlng * dlng;
+        if (d < closestDist) { closestDist = d; closestIdx = i; }
+      }
+      if (closestIdx < navRoute.length - 1) {
+        bearing = getBearing(navRoute[closestIdx], navRoute[closestIdx + 1]);
+      }
+    }
+
+    map.easeTo({
+      center: [navPosition[1], navPosition[0]],
+      zoom: 17,
+      pitch: 60,
+      bearing,
+      duration: 500,
+    });
+  }, [navPosition, isActivelyNavigating, navRoute]);
 
   const handleMapClick = (evt) => {
     const { lat, lng } = evt.lngLat;
@@ -130,7 +264,7 @@ export default function App() {
         alert('Route calculation failed: ' + data.message);
       }
     } catch {
-      alert("Backend error! Make sure Flask server is running on port 5000.");
+      alert("Backend error! Make sure Flask server is running on port 5001.");
     }
     setLoading(false);
   };
@@ -141,14 +275,6 @@ export default function App() {
     setMode('start');
   };
 
-  const routeToGeoJSON = (coords) => ({
-    type: 'Feature',
-    geometry: {
-      type: 'LineString',
-      coordinates: coords.map(p => [p[1], p[0]])
-    }
-  });
-
   const getTimeLabel = (h) => {
     if (h === 0) return '12 AM';
     if (h === 12) return '12 PM';
@@ -157,33 +283,63 @@ export default function App() {
   };
 
   return (
-    <div className="app-container">
+    <div className={`app-container ${mobileView === 'map' ? 'mobile-map' : ''}`}>
+      {/* Mobile view toggle */}
+      <button className="mobile-toggle" onClick={() => setMobileView(v => v === 'map' ? 'panel' : 'map')}>
+        {mobileView === 'map' ? (
+          <><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> Chat</>
+        ) : (
+          <><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg> Map</>
+        )}
+      </button>
       {/* Sidebar */}
       <div className="sidebar">
         {/* Header */}
         <div className="header">
-          <div className="logo">🛡️</div>
-          <div>
-            <h1>SafePath NYC</h1>
-            <p>AI-Powered Safe Routing</p>
+          <div className="logo">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s-8-4.5-8-11.8A8 8 0 0 1 12 2a8 8 0 0 1 8 8.2c0 7.3-8 11.8-8 11.8z"/><circle cx="12" cy="10" r="3"/></svg>
           </div>
+          <div>
+            <h1>SafePath</h1>
+            <p>Chicago Risk-Aware Navigation</p>
+          </div>
+          <span className="gemini-badge">Gemini 3</span>
         </div>
 
         {/* Stats */}
-        <div className="stats-grid">
-          <div className="stat-card">
-            <span className="stat-value">48K+</span>
-            <span className="stat-label">Crashes</span>
+        <div className="stats-bar">
+          <div className="stat-item">
+            <span className="stat-num">49K+</span>
+            <span className="stat-label">crashes analyzed</span>
           </div>
-          <div className="stat-card">
-            <span className="stat-value cyan">15K+</span>
-            <span className="stat-label">Crimes</span>
+          <div className="stat-sep"></div>
+          <div className="stat-item">
+            <span className="stat-num cyan">18K+</span>
+            <span className="stat-label">crime reports</span>
           </div>
-          <div className="stat-card">
-            <span className="stat-value green">5.8K</span>
-            <span className="stat-label">Risk Zones</span>
+          <div className="stat-sep"></div>
+          <div className="stat-item">
+            <span className="stat-num green">4.8K</span>
+            <span className="stat-label">risk zones</span>
           </div>
         </div>
+
+        {/* Weather Widget */}
+        {weather?.current && weather.current.temperature !== null && (
+          <div className="weather-widget">
+            <span className="weather-icon">{weather.current.icon}</span>
+            <div className="weather-info">
+              <span className="weather-temp">{Math.round(weather.current.temperature)}°F</span>
+              <span className="weather-desc">{weather.current.description}</span>
+            </div>
+            <div className="weather-details">
+              {weather.current.wind_speed > 0 && <span>💨 {weather.current.wind_speed} mph</span>}
+              {weather.current.risk_multiplier > 1.1 && (
+                <span className="weather-risk">⚠️ +{Math.round((weather.current.risk_multiplier - 1) * 100)}% risk</span>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Heatmap Toggle */}
         <div className="toggle-section">
@@ -193,7 +349,7 @@ export default function App() {
               checked={showHeatmap}
               onChange={(e) => setShowHeatmap(e.target.checked)}
             />
-            <span className="toggle-text">🔥 Show Risk Heatmap</span>
+            <span className="toggle-text">Risk heatmap</span>
           </label>
         </div>
 
@@ -215,80 +371,84 @@ export default function App() {
 
         {activeTab === 'manual' ? (
           <>
-            {/* Instructions */}
-            <div className="instructions">
-              <div className="instruction-item">
-                <span className="step blue">1</span>
-                <span>Click map to set start</span>
-              </div>
-              <div className="instruction-item">
-                <span className="step red">2</span>
-                <span>Click again for destination</span>
-              </div>
-              <div className="instruction-item">
-                <span className="step green">3</span>
-                <span>Calculate & compare routes</span>
-              </div>
-            </div>
-
-            {/* Point Buttons */}
+            {/* Route Input */}
             <div className="section">
-              <label className="section-label">TRIP POINTS</label>
-              <div className="button-grid">
-                <button
-                  onClick={() => setMode('start')}
-                  className={`point-btn ${mode === 'start' ? 'active blue' : ''} ${points.start ? 'set' : ''}`}
-                >
-                  {points.start ? '✓ Start Set' : '📍 Set Start'}
-                </button>
-                <button
-                  onClick={() => setMode('end')}
-                  className={`point-btn ${mode === 'end' ? 'active red' : ''} ${points.end ? 'set' : ''}`}
-                >
-                  {points.end ? '✓ End Set' : '🏁 Set End'}
-                </button>
+              <label className="section-label">Route</label>
+              <div className="route-input-group">
+                <div className={`route-input-row ${mode === 'start' ? 'active' : ''} ${points.start ? 'set' : ''}`} onClick={() => setMode('start')}>
+                  <div className="route-dot origin"></div>
+                  <span>{points.start ? `${points.start[0].toFixed(4)}, ${points.start[1].toFixed(4)}` : 'Click map to set origin'}</span>
+                  {!points.start && userCoords && (
+                    <button
+                      className="use-location-btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setPoints(p => ({ ...p, start: userCoords }));
+                        setMode('end');
+                      }}
+                      title="Use my current location"
+                    >
+                      📍
+                    </button>
+                  )}
+                </div>
+                <div className="route-input-divider"></div>
+                <div className={`route-input-row ${mode === 'end' ? 'active' : ''} ${points.end ? 'set' : ''}`} onClick={() => setMode('end')}>
+                  <div className="route-dot destination"></div>
+                  <span>{points.end ? `${points.end[0].toFixed(4)}, ${points.end[1].toFixed(4)}` : 'Click map to set destination'}</span>
+                  {!points.end && userCoords && (
+                    <button
+                      className="use-location-btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setPoints(p => ({ ...p, end: userCoords }));
+                      }}
+                      title="Use my current location"
+                    >
+                      📍
+                    </button>
+                  )}
+                </div>
               </div>
               {(points.start || points.end) && (
-                <button onClick={resetPoints} className="reset-btn">
-                  ↺ Reset Points
-                </button>
+                <button onClick={resetPoints} className="reset-btn">Clear route</button>
               )}
             </div>
 
             {/* Travel Mode */}
             <div className="section">
-              <label className="section-label">TRAVEL MODE</label>
+              <label className="section-label">Travel mode</label>
               <div className="mode-switcher">
                 <button
                   className={`mode-btn ${travelMode === 'walking' ? 'active' : ''}`}
                   onClick={() => setTravelMode('walking')}
                 >
-                  🚶 Walk
+                  Walk
                 </button>
                 <button
                   className={`mode-btn ${travelMode === 'cycling' ? 'active' : ''}`}
                   onClick={() => setTravelMode('cycling')}
                 >
-                  🚴 Bike
+                  Bike
                 </button>
                 <button
                   className={`mode-btn ${travelMode === 'driving' ? 'active' : ''}`}
                   onClick={() => setTravelMode('driving')}
                 >
-                  🚗 Drive
+                  Drive
                 </button>
               </div>
               <div className="mode-hint">
-                {travelMode === 'walking' && 'Crime risk weighted 70% — crashes 30%'}
+                {travelMode === 'walking' && 'Crime risk weighted 70%, crashes 30%'}
                 {travelMode === 'cycling' && 'Crime + crash risk weighted equally'}
-                {travelMode === 'driving' && 'Crash risk weighted 90% — crime 10%'}
+                {travelMode === 'driving' && 'Crash risk weighted 90%, crime 10%'}
               </div>
             </div>
 
             {/* Time Slider */}
             <div className="section">
               <div className="section-header">
-                <label className="section-label">TIME OF TRAVEL</label>
+                <label className="section-label">Departure time</label>
                 <span className="time-display">{getTimeLabel(hour)}</span>
               </div>
               <input
@@ -311,9 +471,9 @@ export default function App() {
             {/* Safety Slider */}
             <div className="section">
               <div className="section-header">
-                <label className="section-label">SAFETY PRIORITY</label>
+                <label className="section-label">Safety priority</label>
                 <span className={`priority-badge ${beta > 6 ? 'green' : beta < 3 ? 'orange' : 'blue'}`}>
-                  {beta > 6 ? '🛡️ Safer' : beta < 3 ? '⚡ Faster' : '⚖️ Balanced'}
+                  {beta > 6 ? 'Safer' : beta < 3 ? 'Faster' : 'Balanced'}
                 </span>
               </div>
               <input
@@ -326,8 +486,8 @@ export default function App() {
                 className="slider"
               />
               <div className="slider-labels">
-                <span>⚡ Speed</span>
-                <span>🛡️ Safety</span>
+                <span>Speed</span>
+                <span>Safety</span>
               </div>
             </div>
 
@@ -337,21 +497,21 @@ export default function App() {
               disabled={loading || !points.start || !points.end}
               className="calculate-btn"
             >
-              {loading ? '⏳ Analyzing...' : '⚡ Calculate Safe Path'}
+              {loading ? 'Analyzing routes...' : 'Calculate routes'}
             </button>
 
             {/* Results */}
             {routeData && (
               <div className="results">
-                <div className="results-header">ROUTE COMPARISON</div>
+                <div className="results-header">Route comparison</div>
 
                 <div className="result-cards">
                   <div className="result-card green">
-                    <span className="result-label">Risk Reduction</span>
+                    <span className="result-label">Risk reduction</span>
                     <span className="result-value">{routeData.metrics.reduction_in_risk_pct}%</span>
                   </div>
                   <div className="result-card orange">
-                    <span className="result-label">Extra Time</span>
+                    <span className="result-label">Extra time</span>
                     <span className="result-value">+{Math.round(routeData.metrics.extra_time_seconds)}s</span>
                   </div>
                 </div>
@@ -371,17 +531,17 @@ export default function App() {
                 {!showNav && (
                   <div className="nav-buttons">
                     <button className="nav-btn safest" onClick={() => startNavigation('safest')}>
-                      🛡️ Navigate Safest
+                      Navigate safest
                     </button>
                     <button className="nav-btn fastest" onClick={() => startNavigation('fastest')}>
-                      ⚡ Navigate Fastest
+                      Navigate fastest
                     </button>
                   </div>
                 )}
               </div>
             )}
 
-            {/* Navigation Panel (appears after clicking Navigate) */}
+            {/* Navigation Panel */}
             {showNav && navRoute && (
               <NavigationPanel
                 route={navRoute}
@@ -395,7 +555,7 @@ export default function App() {
           </>
         ) : (
           <>
-            <ChatPanel onRouteReceived={handleChatRoute} onStartNavigation={startNavigation} navContext={navContext} />
+            <ChatPanel onRouteReceived={handleChatRoute} onStartNavigation={startNavigation} navContext={navContext} userCoords={userCoords} weather={weather} />
             {showNav && navRoute && (
               <NavigationPanel
                 route={navRoute}
@@ -411,7 +571,7 @@ export default function App() {
 
         {/* Footer */}
         <div className="footer">
-          <span>Powered by NYC Open Data</span>
+          <span>Chicago Open Data + Gemini 3 AI</span>
           <span className="status">● Online</span>
         </div>
       </div>
@@ -419,15 +579,18 @@ export default function App() {
       {/* Map */}
       <div className="map-container">
         <Map
+          ref={mapRef}
           {...viewState}
           onMove={evt => setViewState(evt.viewState)}
-          mapStyle="https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"
+          onLoad={() => setMapLoaded(true)}
+          mapboxAccessToken={import.meta.env.VITE_MAPBOX_TOKEN}
+          mapStyle="mapbox://styles/mapbox/dark-v11"
           onClick={handleMapClick}
           style={{ width: '100%', height: '100%' }}
         >
           <NavigationControl position="top-right" />
 
-          {/* Risk Heatmap Layer */}
+          {/* Risk Heatmap Layer (declarative — this works fine) */}
           {riskData && showHeatmap && (
             <Source id="risk-data" type="geojson" data={riskData}>
               <Layer
@@ -451,63 +614,69 @@ export default function App() {
             </Source>
           )}
 
-          {/* Routes */}
-          {routeData && (
-            <>
-              <Source id="fastest-route" type="geojson" data={routeToGeoJSON(routeData.fastest_route)}>
-                <Layer
-                  id="fastest-line-shadow"
-                  type="line"
-                  paint={{
-                    'line-color': '#000000',
-                    'line-width': 12,
-                    'line-opacity': 0.4,
-                    'line-blur': 3
-                  }}
-                />
-                <Layer
-                  id="fastest-line"
-                  type="line"
-                  paint={{
-                    'line-color': '#f59e0b',
-                    'line-width': 6,
-                    'line-opacity': 0.9
-                  }}
-                />
-              </Source>
-              <Source id="safest-route" type="geojson" data={routeToGeoJSON(routeData.safest_route)}>
-                <Layer
-                  id="safest-line-glow"
-                  type="line"
-                  paint={{
-                    'line-color': '#10b981',
-                    'line-width': 14,
-                    'line-opacity': 0.3,
-                    'line-blur': 4
-                  }}
-                />
-                <Layer
-                  id="safest-line"
-                  type="line"
-                  paint={{
-                    'line-color': '#10b981',
-                    'line-width': 6,
-                    'line-opacity': 1
-                  }}
-                />
-              </Source>
-            </>
+          {/* Route lines — declarative so they survive map style/heatmap re-renders */}
+          {fastestGeoJSON && (
+            <Source id="fastest-route" type="geojson" data={fastestGeoJSON}>
+              <Layer
+                id="fastest-line-bg"
+                type="line"
+                layout={{ 'line-join': 'round', 'line-cap': 'round' }}
+                paint={{ 'line-color': '#000000', 'line-width': 10, 'line-opacity': 0.4 }}
+              />
+              <Layer
+                id="fastest-line"
+                type="line"
+                layout={{ 'line-join': 'round', 'line-cap': 'round' }}
+                paint={{ 'line-color': '#f59e0b', 'line-width': 6, 'line-opacity': 0.95 }}
+              />
+            </Source>
+          )}
+          {safestGeoJSON && (
+            <Source id="safest-route" type="geojson" data={safestGeoJSON}>
+              <Layer
+                id="safest-line-bg"
+                type="line"
+                layout={{ 'line-join': 'round', 'line-cap': 'round' }}
+                paint={{ 'line-color': '#000000', 'line-width': 10, 'line-opacity': 0.4 }}
+              />
+              <Layer
+                id="safest-line"
+                type="line"
+                layout={{ 'line-join': 'round', 'line-cap': 'round' }}
+                paint={{ 'line-color': '#10b981', 'line-width': 6, 'line-opacity': 1.0 }}
+              />
+            </Source>
           )}
 
-          {/* Markers */}
-          {points.start && (
-            <Marker longitude={points.start[1]} latitude={points.start[0]} anchor="center">
-              <div className="marker blue">A</div>
+          {/* Current location (blue GPS dot) */}
+          {userCoords && (
+            <Marker longitude={userCoords[1]} latitude={userCoords[0]} anchor="center">
+              <div className="my-location-marker">
+                <div className="my-location-pulse"></div>
+                <div className="my-location-dot"></div>
+              </div>
             </Marker>
           )}
+
+          {/* Origin marker (Google Maps green circle) */}
+          {points.start && (
+            <Marker longitude={points.start[1]} latitude={points.start[0]} anchor="center">
+              <div className="gm-origin-marker">
+                <div className="gm-origin-pulse"></div>
+                <div className="gm-origin-outer"></div>
+                <div className="gm-origin-inner"></div>
+              </div>
+            </Marker>
+          )}
+
+          {/* Destination marker (Google Maps red pin) */}
           {points.end && (
-            <Marker longitude={points.end[1]} latitude={points.end[0]} anchor="center">
-              <div className="marker red">B</div>
+            <Marker longitude={points.end[1]} latitude={points.end[0]} anchor="bottom">
+              <svg className="gm-dest-pin" width="28" height="40" viewBox="0 0 28 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M14 0C6.268 0 0 6.268 0 14c0 10.5 14 26 14 26s14-15.5 14-26C28 6.268 21.732 0 14 0z" fill="#EA4335"/>
+                <circle cx="14" cy="14" r="6" fill="#B31412"/>
+                <circle cx="14" cy="14" r="4.5" fill="white"/>
+              </svg>
             </Marker>
           )}
 
@@ -521,10 +690,10 @@ export default function App() {
 
         {/* Map Overlay */}
         <div className="map-overlay">
-          {!points.start && <span>👆 Click map to set START</span>}
-          {points.start && !points.end && <span>👆 Click map to set END</span>}
-          {points.start && points.end && !routeData && <span>✓ Ready - Click Calculate</span>}
-          {routeData && <span>🗺️ Routes displayed</span>}
+          {!points.start && <span>Click map to set origin</span>}
+          {points.start && !points.end && <span>Click map to set destination</span>}
+          {points.start && points.end && !routeData && <span>Ready — click Calculate</span>}
+          {routeData && <span>Routes displayed</span>}
         </div>
 
         {/* Legend */}

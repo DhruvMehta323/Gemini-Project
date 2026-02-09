@@ -96,25 +96,32 @@
   font-family: inherit;
 }
 
-.nav-start-btn.simulate {
-  background: linear-gradient(135deg, #10b981, #3b82f6);
+.nav-start-btn.gps {
+  background: #10b981;
   color: white;
 }
 
-.nav-start-btn.simulate:hover {
+.nav-start-btn.gps:hover {
+  background: #059669;
   transform: translateY(-1px);
   box-shadow: 0 4px 15px rgba(16, 185, 129, 0.3);
 }
 
-.nav-start-btn.gps {
-  background: rgba(255,255,255,0.05);
-  border: 1px solid rgba(255,255,255,0.15);
-  color: #94a3b8;
+.nav-demo-link {
+  background: none;
+  border: none;
+  color: #475569;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 6px;
+  text-align: center;
+  font-family: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
-.nav-start-btn.gps:hover {
-  background: rgba(255,255,255,0.08);
-  color: #cbd5e1;
+.nav-demo-link:hover {
+  color: #64748b;
 }
 
 /* Active navigation */
@@ -294,6 +301,39 @@
   border-color: rgba(239, 68, 68, 0.5);
 }
 
+/* GPS error banner */
+.nav-gps-error {
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.nav-gps-error span {
+  font-size: 12px;
+  color: #f87171;
+  line-height: 1.4;
+}
+
+.nav-gps-error button {
+  background: rgba(255,255,255,0.1);
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: 6px;
+  color: #e2e8f0;
+  font-size: 12px;
+  padding: 6px 12px;
+  cursor: pointer;
+  align-self: flex-start;
+}
+
+.nav-gps-error button:hover {
+  background: rgba(255,255,255,0.15);
+}
+
 /* Navigation position marker (pulsing blue dot) */
 .nav-marker {
   width: 20px;
@@ -309,4 +349,30 @@
   0% { box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.3), 0 2px 8px rgba(0,0,0,0.4); }
   50% { box-shadow: 0 0 0 10px rgba(59, 130, 246, 0.1), 0 2px 8px rgba(0,0,0,0.4); }
   100% { box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.3), 0 2px 8px rgba(0,0,0,0.4); }
+}
+
+/* ===== Mobile Responsive ===== */
+@media (max-width: 768px) {
+  .nav-start-btn {
+    padding: 14px;
+    font-size: 15px;
+  }
+
+  .nav-stop-btn {
+    padding: 14px;
+    font-size: 14px;
+  }
+
+  .nav-current-label {
+    font-size: 16px;
+  }
+
+  .nav-step {
+    padding: 10px 12px;
+    font-size: 14px;
+  }
+
+  .nav-steps {
+    max-height: 250px;
+  }
 }

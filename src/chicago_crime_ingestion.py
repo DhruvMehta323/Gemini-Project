@@ -1,6 +1,6 @@
 """
-NYC Crime Data Ingestion Module
-Fetches NYPD Complaint Data from NYC Open Data (Socrata API)
+Chicago Crime Data Ingestion Module
+Fetches crime data from Chicago Data Portal (Socrata API)
 for pedestrian safety risk scoring
 """
 import requests
@@ -11,32 +11,37 @@ from pathlib import Path
 from typing import Optional
 
 
-class CrimeDataIngestion:
-    """Fetches and processes NYPD Complaint (crime) data"""
+class ChicagoCrimeIngestion:
+    """Fetches and processes Chicago crime data"""
 
-    # NYC Open Data - NYPD Complaint Data Historic
-    BASE_URL = "https://data.cityofnewyork.us/resource/qgea-i56i.json"
+    # Chicago Data Portal - Crimes (2001 to Present)
+    BASE_URL = "https://data.cityofchicago.org/resource/ijzp-q8t2.json"
 
-    # Crime types relevant to pedestrian safety, with severity weights
+    # Chicago crime types with severity weights (pedestrian safety focus)
     CRIME_WEIGHTS = {
-        "MURDER & NON-NEGL. MANSLAUGHTER": 10,
-        "RAPE": 8,
+        "HOMICIDE": 10,
+        "CRIM SEXUAL ASSAULT": 8,
+        "CRIMINAL SEXUAL ASSAULT": 8,
         "ROBBERY": 5,
-        "FELONY ASSAULT": 4,
-        "ASSAULT 3 & RELATED OFFENSES": 2,
-        "DANGEROUS WEAPONS": 3,
-        "SEX CRIMES": 3,
-        "GRAND LARCENY": 1,
-        "PETIT LARCENY": 1,
-        "GRAND LARCENY OF MOTOR VEHICLE": 1,
+        "BATTERY": 4,
+        "ASSAULT": 3,
+        "WEAPONS VIOLATION": 3,
+        "SEX OFFENSE": 3,
+        "KIDNAPPING": 6,
+        "THEFT": 1,
+        "MOTOR VEHICLE THEFT": 1,
     }
 
-    # Premise types that represent outdoor/street locations (relevant to pedestrians)
-    OUTDOOR_PREMISES = {
-        "STREET", "PARK/PLAYGROUND", "TRANSIT - NYC SUBWAY",
-        "TRANSIT FACILITY (OTHER)", "OPEN AREAS (OPEN COVERAGE)",
-        "PARKING LOT/GARAGE (PUBLIC)", "BUS STOP", "TUNNEL",
-        "BRIDGE", "HIGHWAY/PARKWAY", "PEDESTRIAN OVERPASS",
+    # Outdoor locations relevant to pedestrians
+    OUTDOOR_LOCATIONS = {
+        "STREET", "SIDEWALK", "ALLEY",
+        "PARKING LOT/GARAGE(NON.RESID.)", "PARKING LOT",
+        "PARK PROPERTY", "CTA PLATFORM", "CTA STATION",
+        "CTA BUS", "CTA TRAIN", "CTA L PLATFORM", "CTA L TRAIN",
+        "HIGHWAY/EXPRESSWAY", "BRIDGE",
+        "DRIVEWAY - RESIDENTIAL", "GAS STATION",
+        "LAKEFRONT/WATERFRONT/RIVERBANK",
+        "SCHOOL, PUBLIC, GROUNDS", "SPORTS ARENA/STADIUM",
     }
 
     def __init__(self, cache_dir: str = "cache"):
@@ -51,40 +56,27 @@ class CrimeDataIngestion:
         year_start: int = 2023,
         use_cache: bool = True
     ) -> pd.DataFrame:
-        """
-        Fetch crime data from NYC Open Data API.
-        Filters to pedestrian-relevant outdoor crimes.
-        """
-        cache_file = self.cache_dir / f"crimes_{year_start}_{limit}.parquet"
+        cache_file = self.cache_dir / f"chicago_crimes_{year_start}_{limit}.parquet"
 
         if use_cache and cache_file.exists():
-            print(f"Loading cached crime data from {cache_file}")
+            print(f"Loading cached Chicago crime data from {cache_file}")
             self.raw_data = pd.read_parquet(cache_file)
             return self.raw_data
 
-        print(f"Fetching up to {limit} crime records from NYC Open Data...")
+        print(f"Fetching up to {limit} Chicago crime records...")
 
-        # Filter to relevant crime types
         crime_types = "','".join(self.CRIME_WEIGHTS.keys())
         where_clause = (
-            f"cmplnt_fr_dt >= '{year_start}-01-01T00:00:00' "
+            f"date >= '{year_start}-01-01T00:00:00' "
             f"AND latitude IS NOT NULL "
-            f"AND ofns_desc IN('{crime_types}')"
+            f"AND primary_type IN('{crime_types}')"
         )
         select_cols = ",".join([
-            "cmplnt_num",
-            "cmplnt_fr_dt",
-            "cmplnt_fr_tm",
-            "ofns_desc",
-            "law_cat_cd",
-            "boro_nm",
-            "prem_typ_desc",
-            "loc_of_occur_desc",
-            "latitude",
-            "longitude",
+            "id", "date", "primary_type", "description",
+            "location_description", "arrest", "domestic",
+            "latitude", "longitude"
         ])
 
-        # Paginate: Socrata caps at 50k per request
         PAGE_SIZE = 50000
         all_records = []
         offset = 0
@@ -97,7 +89,7 @@ class CrimeDataIngestion:
                     "$limit": page_limit,
                     "$offset": offset,
                     "$where": where_clause,
-                    "$order": "cmplnt_fr_dt DESC",
+                    "$order": "date DESC",
                     "$select": select_cols
                 }
                 response = requests.get(self.BASE_URL, params=params, timeout=120)
@@ -113,28 +105,24 @@ class CrimeDataIngestion:
                 if offset > page_limit:
                     print(f"  Fetched {offset} crime records so far...")
         except (requests.ConnectionError, requests.Timeout, requests.HTTPError) as e:
-            fallback = self._find_fallback_cache("crimes_*.parquet")
+            fallback = self._find_fallback_cache("chicago_crimes_*.parquet")
             if fallback is not None:
                 print(f"WARNING: API request failed ({e.__class__.__name__}). "
                       f"Using fallback cache: {fallback}")
                 self.raw_data = pd.read_parquet(fallback)
                 return self.raw_data
             raise ConnectionError(
-                f"Cannot fetch crime data and no cached files found in {self.cache_dir}/.\n"
-                f"Run once with network access to populate the cache, "
-                f"or place a .parquet file in {self.cache_dir}/."
+                f"Cannot fetch Chicago crime data and no cached files found.\n"
+                f"Error: {e}"
             ) from e
 
         self.raw_data = pd.DataFrame(all_records)
-
-        # Cache for faster subsequent runs
         self.raw_data.to_parquet(cache_file)
         print(f"Cached {len(self.raw_data)} crime records to {cache_file}")
 
         return self.raw_data
 
     def _find_fallback_cache(self, pattern: str) -> Optional[Path]:
-        """Find any available cache file matching the pattern"""
         candidates = sorted(
             self.cache_dir.glob(pattern),
             key=lambda p: p.stat().st_mtime,
@@ -143,74 +131,70 @@ class CrimeDataIngestion:
         return candidates[0] if candidates else None
 
     def clean_and_geocode(self) -> gpd.GeoDataFrame:
-        """
-        Clean crime data and create GeoDataFrame with valid coordinates.
-        Filters to outdoor/street crimes and assigns severity weights.
-        """
         if self.raw_data is None:
             raise ValueError("No data loaded. Call fetch_crimes() first.")
 
         df = self.raw_data.copy()
 
-        # Convert coordinates to numeric
         df["latitude"] = pd.to_numeric(df["latitude"], errors="coerce")
         df["longitude"] = pd.to_numeric(df["longitude"], errors="coerce")
 
-        # Filter valid coordinates (NYC bounding box)
+        # Chicago bounding box
         valid_mask = (
             df["latitude"].notna() &
             df["longitude"].notna() &
-            (df["latitude"] > 40.4) &
-            (df["latitude"] < 41.0) &
-            (df["longitude"] > -74.3) &
-            (df["longitude"] < -73.6)
+            (df["latitude"] > 41.6) &
+            (df["latitude"] < 42.1) &
+            (df["longitude"] > -88.0) &
+            (df["longitude"] < -87.5)
         )
         df = df[valid_mask].copy()
 
-        # Filter to outdoor/street crimes (most relevant for pedestrians)
-        if "prem_typ_desc" in df.columns:
-            outdoor_mask = df["prem_typ_desc"].isin(self.OUTDOOR_PREMISES)
+        # Filter to outdoor/street crimes
+        if "location_description" in df.columns:
+            outdoor_mask = df["location_description"].isin(self.OUTDOOR_LOCATIONS)
             df = df[outdoor_mask].copy()
             print(f"Filtered to {len(df)} outdoor/street crimes")
 
-        # Parse datetime
-        if "cmplnt_fr_dt" in df.columns and "cmplnt_fr_tm" in df.columns:
-            df["crime_datetime"] = pd.to_datetime(
-                df["cmplnt_fr_dt"].str[:10] + " " + df["cmplnt_fr_tm"].fillna("12:00:00"),
-                errors="coerce"
-            )
-        else:
-            df["crime_datetime"] = pd.to_datetime(df["cmplnt_fr_dt"], errors="coerce")
-
+        # Parse datetime — Chicago format: "2024-01-15T12:30:00.000"
+        df["crime_datetime"] = pd.to_datetime(df["date"], errors="coerce")
         df["hour"] = df["crime_datetime"].dt.hour
         df["day_of_week"] = df["crime_datetime"].dt.dayofweek
 
-        # Assign severity based on crime type
-        df["severity"] = df["ofns_desc"].map(self.CRIME_WEIGHTS).fillna(1).astype(float)
+        # Map to NYC-compatible column names for downstream pipeline
+        df["ofns_desc"] = df["primary_type"]
 
-        # Felonies get a boost
-        df.loc[df["law_cat_cd"] == "FELONY", "severity"] *= 1.5
+        # Assign severity based on crime type
+        df["severity"] = df["primary_type"].map(self.CRIME_WEIGHTS).fillna(1).astype(float)
+
+        # Boost severity for arrests (indicates more serious incident)
+        if "arrest" in df.columns:
+            arrest_mask = df["arrest"].astype(str).str.lower() == "true"
+            df.loc[arrest_mask, "severity"] *= 1.3
+
+        # Add law_cat_cd for pipeline compatibility (NYC uses FELONY/MISDEMEANOR)
+        df["law_cat_cd"] = "FELONY"
+
+        # Add prem_typ_desc for compatibility
+        if "location_description" in df.columns:
+            df["prem_typ_desc"] = df["location_description"]
 
         print(f"Valid geocoded crime records: {len(df)}")
 
-        # Create geometry
         geometry = [Point(xy) for xy in zip(df["longitude"], df["latitude"])]
         self.geo_data = gpd.GeoDataFrame(df, geometry=geometry, crs="EPSG:4326")
 
         return self.geo_data
 
     def get_processed_data(self) -> gpd.GeoDataFrame:
-        """Get processed GeoDataFrame, fetching if necessary"""
         if self.geo_data is None:
             self.fetch_crimes()
             self.clean_and_geocode()
         return self.geo_data
 
     def get_stats(self) -> dict:
-        """Return summary statistics of the loaded crime data"""
         if self.geo_data is None:
             return {}
-
         gdf = self.geo_data
         return {
             "total_crimes": len(gdf),
@@ -218,7 +202,6 @@ class CrimeDataIngestion:
                 "start": str(gdf["crime_datetime"].min()),
                 "end": str(gdf["crime_datetime"].max())
             },
-            "by_borough": gdf["boro_nm"].value_counts().to_dict() if "boro_nm" in gdf.columns else {},
-            "by_crime_type": gdf["ofns_desc"].value_counts().to_dict(),
+            "by_crime_type": gdf["primary_type"].value_counts().to_dict(),
             "avg_severity": float(gdf["severity"].mean())
         }

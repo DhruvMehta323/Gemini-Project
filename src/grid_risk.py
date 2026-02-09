@@ -218,22 +218,25 @@ class GridRiskCalculator:
 
         city_avg = self.grid_data["risk_score"].mean()
 
+        # Build O(1) lookup dict instead of filtering DataFrame per row
+        risk_lookup = dict(zip(
+            self.grid_data["h3_cell"],
+            self.grid_data["risk_score"]
+        ))
+
         def get_smoothed_risk(row):
             cell = row["h3_cell"]
             own_risk = row["risk_score"]
 
-            # Get neighbor cells
             neighbors = h3.grid_ring(cell, 1)
-            neighbor_data = self.grid_data[
-                self.grid_data["h3_cell"].isin(neighbors)
+            neighbor_scores = [
+                risk_lookup[n] for n in neighbors if n in risk_lookup
             ]
 
-            if len(neighbor_data) > 0:
-                neighbor_avg = neighbor_data["risk_score"].mean()
-                # Blend: 70% own risk + 30% neighbor influence
+            if neighbor_scores:
+                neighbor_avg = sum(neighbor_scores) / len(neighbor_scores)
                 return round(own_risk * 0.7 + neighbor_avg * 0.3, 2)
             else:
-                # Isolated cell: blend with city average
                 return round(own_risk * 0.7 + city_avg * fallback_pct, 2)
 
         self.grid_data["smoothed_risk"] = self.grid_data.apply(

@@ -13,7 +13,7 @@ class RoutingEngine:
         "cycling":  {"crash": 0.5, "crime": 0.5},
     }
 
-    def __init__(self, place_name="Manhattan, New York, USA"):
+    def __init__(self, place_name="Chicago, Illinois, USA"):
         print(f"Initializing Graph for {place_name}...")
         self.G = ox.graph_from_place(place_name, network_type='drive')
         self.G = ox.add_edge_speeds(self.G)
@@ -78,9 +78,9 @@ class RoutingEngine:
         """
         # Validate bounds
         if not self.is_in_bounds(start_coords[0], start_coords[1]):
-            raise ValueError(f"Start point outside Manhattan coverage area")
+            raise ValueError(f"Start point outside Chicago coverage area")
         if not self.is_in_bounds(end_coords[0], end_coords[1]):
-            raise ValueError(f"End point outside Manhattan coverage area")
+            raise ValueError(f"End point outside Chicago coverage area")
 
         # 1. Get the Fastest Route (Beta = 0)
         fastest_path_coords = self.get_route(start_coords, end_coords, beta=0, hour=hour, is_weekend=is_weekend, travel_mode=travel_mode)

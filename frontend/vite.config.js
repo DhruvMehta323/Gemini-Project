@@ -11,9 +11,8 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:5000', // Connects to your Flask Backend
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, '')
+        target: 'http://127.0.0.1:5001', // Connects to your Flask Backend
+        changeOrigin: true
       }
     }
   }

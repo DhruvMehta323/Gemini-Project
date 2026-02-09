@@ -14,18 +14,23 @@ export default function NavigationPanel({ route, totalTime, onPositionUpdate, on
   const simRef = useRef(null);
   const gpsRef = useRef(null);
   const stepListRef = useRef(null);
+  const totalDistRef = useRef(0);
+  const instructionsRef = useRef([]);
+  const currentStepRef = useRef(0);
 
   // Generate instructions when route changes
   useEffect(() => {
     if (route && route.length > 1) {
       const instrs = generateInstructions(route);
       setInstructions(instrs);
+      instructionsRef.current = instrs;
 
       // Calculate total distance
       let total = 0;
       for (let i = 0; i < route.length - 1; i++) {
         total += getDistance(route[i], route[i + 1]);
       }
+      totalDistRef.current = total;
       setDistanceRemaining(Math.round(total));
       setTimeRemaining(Math.round(totalTime || total / 1.4)); // 1.4 m/s walking speed
     }
@@ -48,26 +53,33 @@ export default function NavigationPanel({ route, totalTime, onPositionUpdate, on
     }
   }, [instructions, currentStep, isNavigating, onNavStateUpdate]);
 
-  // Find which step we're closest to
+  // Keep currentStepRef in sync
+  useEffect(() => {
+    currentStepRef.current = currentStep;
+  }, [currentStep]);
+
+  // Find which step we're at (forward-only — never regress to earlier steps)
+  // Uses refs to avoid stale closures in GPS watchPosition callbacks
   const updateStep = useCallback((pos) => {
-    if (!instructions.length) return;
-    let closest = 0;
-    let minDist = Infinity;
-    for (let i = 0; i < instructions.length; i++) {
-      const d = getDistance(pos, instructions[i].coord);
-      if (d < minDist) {
-        minDist = d;
-        closest = i;
+    const instrs = instructionsRef.current;
+    if (!instrs.length) return;
+    const step = currentStepRef.current;
+    const safeCurrentStep = Math.min(step, instrs.length - 1);
+    let newStep = safeCurrentStep;
+    for (let i = safeCurrentStep + 1; i < instrs.length; i++) {
+      const d = getDistance(pos, instrs[i].coord);
+      if (d < 35) {
+        newStep = i;
+        break;
       }
     }
-    // Advance to next step if we're close enough (within 20m)
-    if (minDist < 20 && closest < instructions.length - 1) {
-      closest = Math.max(closest, currentStep);
+    if (newStep > safeCurrentStep) {
+      setCurrentStep(newStep);
+      currentStepRef.current = newStep;
     }
-    setCurrentStep(closest);
-  }, [instructions, currentStep]);
+  }, []);
 
-  // Simulation: animate along the route
+  // Simulation: animate along the route (10fps — smooth on mobile without killing perf)
   const startSimulation = () => {
     if (!route || route.length < 2) return;
     setIsNavigating(true);
@@ -78,7 +90,7 @@ export default function NavigationPanel({ route, totalTime, onPositionUpdate, on
     let segIndex = 0;
     let fraction = 0;
     const totalSegs = route.length - 1;
-    const speed = 0.02; // fraction per tick — controls simulation speed
+    const speed = 0.05; // fraction per tick at 10fps (same visual pace as old 0.008 at 60fps)
 
     const tick = () => {
       fraction += speed;
@@ -88,12 +100,16 @@ export default function NavigationPanel({ route, totalTime, onPositionUpdate, on
         segIndex++;
         if (segIndex >= totalSegs) {
           // Arrived
+          clearInterval(simRef.current);
+          simRef.current = null;
           const endPos = route[route.length - 1];
           onPositionUpdate(endPos);
           setProgress(100);
           setDistanceRemaining(0);
           setTimeRemaining(0);
-          setCurrentStep(instructions.length - 1);
+          const lastStep = Math.max(0, instructionsRef.current.length - 1);
+          setCurrentStep(lastStep);
+          currentStepRef.current = lastStep;
           setNavMode(null);
           return;
         }
@@ -116,12 +132,12 @@ export default function NavigationPanel({ route, totalTime, onPositionUpdate, on
       setTimeRemaining(Math.round(remaining / 1.4));
 
       updateStep(pos);
-
-      simRef.current = requestAnimationFrame(tick);
     };
 
-    simRef.current = requestAnimationFrame(tick);
+    simRef.current = setInterval(tick, 100); // 10fps — 6x fewer re-renders than rAF
   };
+
+  const [gpsError, setGpsError] = useState(null);
 
   // GPS: track real position
   const startGPS = () => {
@@ -131,35 +147,80 @@ export default function NavigationPanel({ route, totalTime, onPositionUpdate, on
     }
     setIsNavigating(true);
     setNavMode('gps');
+    setCurrentStep(0);
+    setProgress(0);
+    setGpsError(null);
 
     gpsRef.current = navigator.geolocation.watchPosition(
       (position) => {
+        setGpsError(null);
         const pos = [position.coords.latitude, position.coords.longitude];
         onPositionUpdate(pos);
         updateStep(pos);
 
-        // Update remaining distance from current position to end
-        let remaining = getDistance(pos, route[route.length - 1]);
+        // Calculate remaining distance along route (not straight-line)
+        let closestIdx = 0;
+        let closestDist = Infinity;
+        for (let i = 0; i < route.length; i++) {
+          const d = getDistance(pos, route[i]);
+          if (d < closestDist) {
+            closestDist = d;
+            closestIdx = i;
+          }
+        }
+        let remaining = 0;
+        for (let i = closestIdx; i < route.length - 1; i++) {
+          remaining += getDistance(route[i], route[i + 1]);
+        }
         setDistanceRemaining(Math.round(remaining));
         setTimeRemaining(Math.round(remaining / 1.4));
+
+        // Update progress
+        const total = totalDistRef.current;
+        if (total > 0) {
+          setProgress(Math.max(0, Math.min(100, ((total - remaining) / total) * 100)));
+        }
+
+        // Check for arrival
+        const destDist = getDistance(pos, route[route.length - 1]);
+        if (destDist < 20) {
+          setProgress(100);
+          setDistanceRemaining(0);
+          setTimeRemaining(0);
+          const lastStep = Math.max(0, instructionsRef.current.length - 1);
+          setCurrentStep(lastStep);
+          currentStepRef.current = lastStep;
+        }
       },
       (error) => {
         console.error('GPS error:', error);
+        if (error.code === 1) {
+          setGpsError('Location access denied. Please enable location permissions in your browser settings.');
+        } else if (error.code === 2) {
+          setGpsError('Unable to determine your location. Please check your GPS settings.');
+        } else if (error.code === 3) {
+          setGpsError('Location request timed out. Trying again...');
+        }
       },
-      { enableHighAccuracy: true, maximumAge: 2000 }
+      { enableHighAccuracy: true, maximumAge: 2000, timeout: 10000 }
     );
   };
 
-  // Auto-start navigation when triggered from voice call
+  // Auto-start GPS navigation by default (like Google Maps)
+  // Wait for instructions to be generated before starting
   useEffect(() => {
-    if (!autoStart || !route || route.length < 2 || isNavigating) return;
-    if (autoStart === 'sim') startSimulation();
-    else if (autoStart === 'gps') startGPS();
+    if (!route || route.length < 2 || isNavigating) return;
+    if (!instructions.length) return; // Wait for instructions to be ready
+    if (autoStart === 'sim') {
+      startSimulation();
+    } else {
+      startGPS();
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoStart]);
+  }, [autoStart, route, instructions]);
 
   const stopNavigation = () => {
-    if (simRef.current) cancelAnimationFrame(simRef.current);
+    if (simRef.current) clearInterval(simRef.current);
     if (gpsRef.current) navigator.geolocation.clearWatch(gpsRef.current);
     setIsNavigating(false);
     setNavMode(null);
@@ -171,7 +232,7 @@ export default function NavigationPanel({ route, totalTime, onPositionUpdate, on
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (simRef.current) cancelAnimationFrame(simRef.current);
+      if (simRef.current) clearInterval(simRef.current);
       if (gpsRef.current) navigator.geolocation.clearWatch(gpsRef.current);
     };
   }, []);
@@ -202,7 +263,7 @@ export default function NavigationPanel({ route, totalTime, onPositionUpdate, on
       </div>
 
       {!isNavigating ? (
-        // Pre-navigation: show start options
+        // Pre-navigation: starting GPS...
         <div className="nav-start-section">
           <div className="nav-route-summary">
             <div className="nav-summary-item">
@@ -218,19 +279,28 @@ export default function NavigationPanel({ route, totalTime, onPositionUpdate, on
               <span className="nav-summary-label">Steps</span>
             </div>
           </div>
-          <button className="nav-start-btn simulate" onClick={startSimulation}>
-            ▶ Simulate Navigation
-          </button>
           <button className="nav-start-btn gps" onClick={startGPS}>
-            📡 Use Live GPS
+            Start navigation
+          </button>
+          <button className="nav-demo-link" onClick={startSimulation}>
+            Demo mode
           </button>
         </div>
       ) : (
         // Active navigation
         <div className="nav-active">
+          {/* GPS error banner */}
+          {gpsError && (
+            <div className="nav-gps-error">
+              <span>{gpsError}</span>
+              <button onClick={() => { stopNavigation(); startSimulation(); }}>
+                Use Demo Mode
+              </button>
+            </div>
+          )}
           {/* Mode indicator + Progress bar */}
           <div className="nav-mode-badge">
-            {navMode === 'sim' ? '▶ Simulating' : '📡 Live GPS'}
+            {navMode === 'sim' ? 'Demo mode' : 'Navigating'}
           </div>
           <div className="nav-progress-bar">
             <div className="nav-progress-fill" style={{ width: `${progress}%` }} />
