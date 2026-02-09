@@ -45,37 +45,32 @@ export default function App() {
   const [mapLoaded, setMapLoaded] = useState(false);
   const mapRef = useRef(null);
 
-  const handleChatRoute = (chatRouteData, startCoords, endCoords, chatHour, chatBeta, chatTravelMode) => {
-    console.log('[handleChatRoute] Received route data:', {
-      hasFastest: !!chatRouteData?.fastest_route,
-      fastestLen: chatRouteData?.fastest_route?.length,
-      hasSafest: !!chatRouteData?.safest_route,
-      safestLen: chatRouteData?.safest_route?.length,
-      startCoords,
-      endCoords,
-      chatHour,
-      chatBeta,
-      chatTravelMode
-    });
+  // useCallback so voice callLoop always has a stable reference (avoids stale closures)
+  const handleChatRoute = useCallback((chatRouteData, startCoords, endCoords, chatHour, chatBeta, chatTravelMode) => {
     setRouteData(chatRouteData);
     setPoints({ start: startCoords, end: endCoords });
     setHour(chatHour ?? 17);
     setBeta(chatBeta ?? 5);
     if (chatTravelMode) setTravelMode(chatTravelMode);
     if (window.innerWidth <= 768) setMobileView('map');
-  };
+  }, []);
 
-  const startNavigation = (routeType, autoStart = 'gps') => {
-    if (!routeData) return;
-    const coords = routeType === 'fastest' ? routeData.fastest_route : routeData.safest_route;
+  // Use ref so startNavigation always reads the LATEST routeData (not a stale closure)
+  const routeDataRef = useRef(null);
+  useEffect(() => { routeDataRef.current = routeData; }, [routeData]);
+
+  const startNavigation = useCallback((routeType, autoStart = 'gps') => {
+    const rd = routeDataRef.current;
+    if (!rd) return;
+    const coords = routeType === 'fastest' ? rd.fastest_route : rd.safest_route;
     const time = routeType === 'fastest'
-      ? routeData.metrics.fastest.total_time
-      : routeData.metrics.safest.total_time;
+      ? rd.metrics.fastest.total_time
+      : rd.metrics.safest.total_time;
     setNavRoute(coords);
     setNavTime(time);
     setShowNav(true);
     setNavAutoStart(autoStart);
-  };
+  }, []);
 
   const handleNavStateUpdate = useCallback(({ instructions, currentStep, isNavigating }) => {
     setNavInstructions(instructions);
@@ -139,7 +134,7 @@ export default function App() {
     navigator.geolocation.getCurrentPosition(
       (pos) => setUserCoords([pos.coords.latitude, pos.coords.longitude]),
       () => {},
-      { enableHighAccuracy: true, timeout: 10000 }
+      { enableHighAccuracy: true, timeout: 30000 }
     );
     const watchId = navigator.geolocation.watchPosition(
       (pos) => setUserCoords([pos.coords.latitude, pos.coords.longitude]),

@@ -202,7 +202,7 @@ export default function NavigationPanel({ route, totalTime, onPositionUpdate, on
           setGpsError('Location request timed out. Trying again...');
         }
       },
-      { enableHighAccuracy: true, maximumAge: 2000, timeout: 10000 }
+      { enableHighAccuracy: true, maximumAge: 5000, timeout: 30000 }
     );
   };
 
