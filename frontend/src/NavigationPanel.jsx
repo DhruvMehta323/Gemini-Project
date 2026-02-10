@@ -319,7 +319,7 @@ export default function NavigationPanel({ route, totalTime, onPositionUpdate, on
   const handleShare = () => {
     if (navigator.share) {
       navigator.share({
-        title: 'StreetWise Chicago Navigation',
+        title: 'SafePath Navigation',
         text: `I'm navigating safely! ETA: ${getETAClock(timeRemaining)}`,
         url: window.location.href,
       }).catch(() => {});
