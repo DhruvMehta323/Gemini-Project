@@ -1,4 +1,5 @@
 # SafePath
+# TEAM MEMBERS - HARSH JAIN | DHRUV MEHTA | AAGAM BOHTRA
 
 **Find safer routes through Chicago — because Google Maps won't tell you which streets to avoid at 2 AM.**
 
